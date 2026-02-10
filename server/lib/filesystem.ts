@@ -14,9 +14,12 @@ import { v4 as uuidv4 } from "uuid";
  * - Metadata is authoritative
  * - Logs are append-only
  * - Artifacts are immutable once written
+ *
+ * Uses dependency injection pattern:
+ * - Tests inject temporary directories
+ * - Production injects real storage root
+ * - Workers inject their own views
  */
-
-export const STORAGE_ROOT = process.env.STORAGE_ROOT || "/tmp/ego-studio-jobs";
 
 export const JOB_STATES = {
   NEW: "NEW",
@@ -74,227 +77,282 @@ export interface JobMetadata {
 }
 
 /**
- * Initialize storage directories
+ * Filesystem API interface
  */
-export async function initializeStorage(): Promise<void> {
-  for (const state of Object.values(JOB_STATES)) {
-    const dir = path.join(STORAGE_ROOT, "jobs", state);
-    await fs.ensureDir(dir);
-  }
+export interface FilesystemAPI {
+  initializeStorage(): Promise<void>;
+  createJobFolder(youtubeUrl: string): Promise<{ jobId: string; metadata: JobMetadata }>;
+  readMetadata(jobId: string): Promise<JobMetadata | null>;
+  writeMetadata(jobId: string, metadata: JobMetadata): Promise<void>;
+  getJobStateDir(jobId: string): Promise<{ state: JobState; dir: string } | null>;
+  listJobsByState(state: JobState): Promise<string[]>;
+  listAllJobs(): Promise<{ jobId: string; state: JobState; metadata: JobMetadata }[]>;
+  appendToJobLog(jobId: string, message: string): Promise<void>;
+  readJobLogs(jobId: string): Promise<string[]>;
+  listArtifacts(jobId: string): Promise<Record<string, string[]>>;
+  getArtifactPath(jobId: string, artifactType: string, fileName: string): Promise<string | null>;
+  writeArtifact(jobId: string, artifactType: string, fileName: string, data: Buffer | string): Promise<string>;
+  deleteJobFolder(jobId: string): Promise<void>;
 }
 
 /**
- * Create a new job folder in NEW state
+ * Factory function to create filesystem API with dependency injection
+ *
+ * @param storageRoot - Root directory for job storage
+ * @returns FilesystemAPI instance
  */
-export async function createJobFolder(youtubeUrl: string): Promise<{ jobId: string; metadata: JobMetadata }> {
-  const jobId = uuidv4();
-  const now = new Date().toISOString();
-
-  const jobDir = path.join(STORAGE_ROOT, "jobs", JOB_STATES.NEW, jobId);
-  await fs.ensureDir(jobDir);
-
-  // Create logs directory
-  await fs.ensureDir(path.join(jobDir, "logs"));
-
-  const metadata: JobMetadata = {
-    id: jobId,
-    youtubeUrl,
-    state: JOB_STATES.NEW,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await fs.writeJSON(path.join(jobDir, "metadata.json"), metadata, { spaces: 2 });
-
-  // Log creation
-  await appendToJobLog(jobId, `Job created for URL: ${youtubeUrl}`);
-
-  return { jobId, metadata };
-}
-
-/**
- * Read job metadata from filesystem
- */
-export async function readMetadata(jobId: string): Promise<JobMetadata | null> {
-  // Search for job in all state directories
-  for (const state of Object.values(JOB_STATES)) {
-    const metadataPath = path.join(STORAGE_ROOT, "jobs", state, jobId, "metadata.json");
-    if (await fs.pathExists(metadataPath)) {
-      return fs.readJSON(metadataPath);
+export function createFilesystem(storageRoot: string): FilesystemAPI {
+  /**
+   * Initialize storage directories
+   */
+  async function initializeStorage(): Promise<void> {
+    for (const state of Object.values(JOB_STATES)) {
+      const dir = path.join(storageRoot, "jobs", state);
+      await fs.ensureDir(dir);
     }
   }
-  return null;
-}
 
-/**
- * Write job metadata to filesystem
- */
-export async function writeMetadata(jobId: string, metadata: JobMetadata): Promise<void> {
-  const state = metadata.state;
-  const metadataPath = path.join(STORAGE_ROOT, "jobs", state, jobId, "metadata.json");
+  /**
+   * Create a new job folder in NEW state
+   */
+  async function createJobFolder(youtubeUrl: string): Promise<{ jobId: string; metadata: JobMetadata }> {
+    const jobId = uuidv4();
+    const now = new Date().toISOString();
 
-  // Ensure directory exists
-  await fs.ensureDir(path.dirname(metadataPath));
+    const jobDir = path.join(storageRoot, "jobs", JOB_STATES.NEW, jobId);
+    await fs.ensureDir(jobDir);
 
-  // Update timestamp
-  metadata.updatedAt = new Date().toISOString();
+    // Create logs directory and initial log file
+    const logsDir = path.join(jobDir, "logs");
+    await fs.ensureDir(logsDir);
+    const logFile = path.join(logsDir, "job.log");
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] Job created for URL: ${youtubeUrl}\n`;
+    await fs.writeFile(logFile, logEntry);
 
-  await fs.writeJSON(metadataPath, metadata, { spaces: 2 });
-}
+    const metadata: JobMetadata = {
+      id: jobId,
+      youtubeUrl,
+      state: JOB_STATES.NEW,
+      createdAt: now,
+      updatedAt: now,
+    };
 
-/**
- * Get the current state directory for a job
- */
-export async function getJobStateDir(jobId: string): Promise<{ state: JobState; dir: string } | null> {
-  for (const state of Object.values(JOB_STATES)) {
-    const dir = path.join(STORAGE_ROOT, "jobs", state, jobId);
-    if (await fs.pathExists(dir)) {
-      return { state, dir };
-    }
-  }
-  return null;
-}
+    await fs.writeJSON(path.join(jobDir, "metadata.json"), metadata, { spaces: 2 });
 
-/**
- * List all jobs in a given state
- */
-export async function listJobsByState(state: JobState): Promise<string[]> {
-  const stateDir = path.join(STORAGE_ROOT, "jobs", state);
-  if (!(await fs.pathExists(stateDir))) {
-    return [];
+    return { jobId, metadata };
   }
 
-  const entries = await fs.readdir(stateDir);
-  return entries.filter((entry: string) => fs.statSync(path.join(stateDir, entry)).isDirectory());
-}
-
-/**
- * List all jobs across all states
- */
-export async function listAllJobs(): Promise<{ jobId: string; state: JobState; metadata: JobMetadata }[]> {
-  const jobs: { jobId: string; state: JobState; metadata: JobMetadata }[] = [];
-
-  for (const state of Object.values(JOB_STATES)) {
-    const jobIds = await listJobsByState(state);
-    for (const jobId of jobIds) {
-      const metadata = await readMetadata(jobId);
-      if (metadata) {
-        jobs.push({ jobId, state, metadata });
+  /**
+   * Read job metadata from filesystem
+   */
+  async function readMetadata(jobId: string): Promise<JobMetadata | null> {
+    // Search for job in all state directories
+    for (const state of Object.values(JOB_STATES)) {
+      const metadataPath = path.join(storageRoot, "jobs", state, jobId, "metadata.json");
+      if (await fs.pathExists(metadataPath)) {
+        return fs.readJSON(metadataPath);
       }
     }
-  }
-
-  // Sort by createdAt descending
-  jobs.sort((a, b) => new Date(b.metadata.createdAt).getTime() - new Date(a.metadata.createdAt).getTime());
-
-  return jobs;
-}
-
-/**
- * Append to job log (append-only)
- */
-export async function appendToJobLog(jobId: string, message: string): Promise<void> {
-  const stateDir = await getJobStateDir(jobId);
-  if (!stateDir) {
-    throw new Error(`Job ${jobId} not found`);
-  }
-
-  const logFile = path.join(stateDir.dir, "logs", "job.log");
-  await fs.ensureDir(path.dirname(logFile));
-
-  const timestamp = new Date().toISOString();
-  const logEntry = `[${timestamp}] ${message}\n`;
-
-  await fs.appendFile(logFile, logEntry);
-}
-
-/**
- * Read job logs
- */
-export async function readJobLogs(jobId: string): Promise<string[]> {
-  const stateDir = await getJobStateDir(jobId);
-  if (!stateDir) {
-    throw new Error(`Job ${jobId} not found`);
-  }
-
-  const logFile = path.join(stateDir.dir, "logs", "job.log");
-  if (!(await fs.pathExists(logFile))) {
-    return [];
-  }
-
-  const content = await fs.readFile(logFile, "utf-8");
-  return content.split("\n").filter((line: string) => line.trim());
-}
-
-/**
- * List artifacts for a job
- */
-export async function listArtifacts(jobId: string): Promise<Record<string, string[]>> {
-  const stateDir = await getJobStateDir(jobId);
-  if (!stateDir) {
-    throw new Error(`Job ${jobId} not found`);
-  }
-
-  const artifacts: Record<string, string[]> = {};
-
-  // Check for artifact directories
-  const artifactDirs = ["download", "separation", "lyrics", "audacity"];
-  for (const dir of artifactDirs) {
-    const artifactPath = path.join(stateDir.dir, dir);
-    if (await fs.pathExists(artifactPath)) {
-      const files = await fs.readdir(artifactPath);
-      artifacts[dir] = files;
-    }
-  }
-
-  return artifacts;
-}
-
-/**
- * Get artifact file path
- */
-export async function getArtifactPath(jobId: string, artifactType: string, fileName: string): Promise<string | null> {
-  const stateDir = await getJobStateDir(jobId);
-  if (!stateDir) {
     return null;
   }
 
-  const filePath = path.join(stateDir.dir, artifactType, fileName);
-  if (await fs.pathExists(filePath)) {
+  /**
+   * Write job metadata to filesystem
+   */
+  async function writeMetadata(jobId: string, metadata: JobMetadata): Promise<void> {
+    const state = metadata.state;
+    const metadataPath = path.join(storageRoot, "jobs", state, jobId, "metadata.json");
+
+    // Ensure directory exists
+    await fs.ensureDir(path.dirname(metadataPath));
+
+    // Update timestamp
+    metadata.updatedAt = new Date().toISOString();
+
+    await fs.writeJSON(metadataPath, metadata, { spaces: 2 });
+  }
+
+  /**
+   * Get the current state directory for a job
+   */
+  async function getJobStateDir(jobId: string): Promise<{ state: JobState; dir: string } | null> {
+    for (const state of Object.values(JOB_STATES)) {
+      const dir = path.join(storageRoot, "jobs", state, jobId);
+      if (await fs.pathExists(dir)) {
+        return { state, dir };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * List all jobs in a given state
+   */
+  async function listJobsByState(state: JobState): Promise<string[]> {
+    const stateDir = path.join(storageRoot, "jobs", state);
+    if (!(await fs.pathExists(stateDir))) {
+      return [];
+    }
+
+    const entries = await fs.readdir(stateDir);
+    return entries.filter((entry: string) => fs.statSync(path.join(stateDir, entry)).isDirectory());
+  }
+
+  /**
+   * List all jobs across all states
+   */
+  async function listAllJobs(): Promise<{ jobId: string; state: JobState; metadata: JobMetadata }[]> {
+    const jobs: { jobId: string; state: JobState; metadata: JobMetadata }[] = [];
+
+    for (const state of Object.values(JOB_STATES)) {
+      const jobIds = await listJobsByState(state);
+      for (const jobId of jobIds) {
+        const metadata = await readMetadata(jobId);
+        if (metadata) {
+          jobs.push({ jobId, state, metadata });
+        }
+      }
+    }
+
+    // Sort by createdAt descending
+    jobs.sort((a, b) => new Date(b.metadata.createdAt).getTime() - new Date(a.metadata.createdAt).getTime());
+
+    return jobs;
+  }
+
+  /**
+   * Append to job log (append-only)
+   */
+  async function appendToJobLog(jobId: string, message: string): Promise<void> {
+    const stateDir = await getJobStateDir(jobId);
+    if (!stateDir) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+
+    const logFile = path.join(stateDir.dir, "logs", "job.log");
+    await fs.ensureDir(path.dirname(logFile));
+
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${message}\n`;
+
+    // Create file if it doesn't exist, otherwise append
+    if (!(await fs.pathExists(logFile))) {
+      await fs.writeFile(logFile, logEntry);
+    } else {
+      await fs.appendFile(logFile, logEntry);
+    }
+  }
+
+  /**
+   * Read job logs
+   */
+  async function readJobLogs(jobId: string): Promise<string[]> {
+    const stateDir = await getJobStateDir(jobId);
+    if (!stateDir) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+
+    const logFile = path.join(stateDir.dir, "logs", "job.log");
+    if (!(await fs.pathExists(logFile))) {
+      return [];
+    }
+
+    const content = await fs.readFile(logFile, "utf-8");
+    return content.split("\n").filter((line: string) => line.trim());
+  }
+
+  /**
+   * List artifacts for a job
+   */
+  async function listArtifacts(jobId: string): Promise<Record<string, string[]>> {
+    const stateDir = await getJobStateDir(jobId);
+    if (!stateDir) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+
+    const artifacts: Record<string, string[]> = {};
+
+    // Check for artifact directories
+    const artifactDirs = ["download", "separation", "lyrics", "audacity"];
+    for (const dir of artifactDirs) {
+      const artifactPath = path.join(stateDir.dir, dir);
+      if (await fs.pathExists(artifactPath)) {
+        const files = await fs.readdir(artifactPath);
+        artifacts[dir] = files;
+      }
+    }
+
+    return artifacts;
+  }
+
+  /**
+   * Get artifact file path
+   */
+  async function getArtifactPath(jobId: string, artifactType: string, fileName: string): Promise<string | null> {
+    const stateDir = await getJobStateDir(jobId);
+    if (!stateDir) {
+      return null;
+    }
+
+    const filePath = path.join(stateDir.dir, artifactType, fileName);
+    if (await fs.pathExists(filePath)) {
+      return filePath;
+    }
+
+    return null;
+  }
+
+  /**
+   * Write artifact file
+   */
+  async function writeArtifact(jobId: string, artifactType: string, fileName: string, data: Buffer | string): Promise<string> {
+    const stateDir = await getJobStateDir(jobId);
+    if (!stateDir) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+
+    const artifactDir = path.join(stateDir.dir, artifactType);
+    await fs.ensureDir(artifactDir);
+
+    const filePath = path.join(artifactDir, fileName);
+    if (typeof data === "string") {
+      await fs.writeFile(filePath, data);
+    } else {
+      await fs.writeFile(filePath, data);
+    }
+
     return filePath;
   }
 
-  return null;
+  /**
+   * Delete a job folder (used for cleanup, not normal operation)
+   */
+  async function deleteJobFolder(jobId: string): Promise<void> {
+    const stateDir = await getJobStateDir(jobId);
+    if (stateDir) {
+      await fs.remove(stateDir.dir);
+    }
+  }
+
+  return {
+    initializeStorage,
+    createJobFolder,
+    readMetadata,
+    writeMetadata,
+    getJobStateDir,
+    listJobsByState,
+    listAllJobs,
+    appendToJobLog,
+    readJobLogs,
+    listArtifacts,
+    getArtifactPath,
+    writeArtifact,
+    deleteJobFolder,
+  };
 }
 
 /**
- * Write artifact file
+ * Production filesystem instance (uses real storage root)
  */
-export async function writeArtifact(jobId: string, artifactType: string, fileName: string, data: Buffer | string): Promise<string> {
-  const stateDir = await getJobStateDir(jobId);
-  if (!stateDir) {
-    throw new Error(`Job ${jobId} not found`);
-  }
-
-  const artifactDir = path.join(stateDir.dir, artifactType);
-  await fs.ensureDir(artifactDir);
-
-  const filePath = path.join(artifactDir, fileName);
-  if (typeof data === "string") {
-    await fs.writeFile(filePath, data);
-  } else {
-    await fs.writeFile(filePath, data);
-  }
-
-  return filePath;
-}
-
-/**
- * Delete a job folder (used for cleanup, not normal operation)
- */
-export async function deleteJobFolder(jobId: string): Promise<void> {
-  const stateDir = await getJobStateDir(jobId);
-  if (stateDir) {
-    await fs.remove(stateDir.dir);
-  }
-}
+export const filesystem = createFilesystem(process.env.STORAGE_ROOT || "/tmp/ego-studio-jobs");

@@ -1,36 +1,33 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs-extra";
 import path from "path";
-import {
-  STORAGE_ROOT,
-  JOB_STATES,
-  initializeStorage,
-  createJobFolder,
-  readMetadata,
-  writeMetadata,
-  getJobStateDir,
-  listJobsByState,
-  listAllJobs,
-  appendToJobLog,
-  readJobLogs,
-  deleteJobFolder,
-} from "./filesystem";
+import { createFilesystem, JOB_STATES } from "./filesystem";
 
-// Use a temporary directory for tests
-const TEST_STORAGE_ROOT = "/tmp/ego-studio-jobs-test";
+// Use a temporary directory for tests (unique per test run)
+const TEST_STORAGE_ROOT = `/tmp/ego-studio-jobs-test-filesystem-${Date.now()}`;
 
-describe("Filesystem Module", () => {
+describe.sequential("Filesystem Module", () => {
+  let filesystem: ReturnType<typeof createFilesystem>;
+  let testDir: string;
+
   beforeEach(async () => {
-    // Override STORAGE_ROOT for tests
-    process.env.STORAGE_ROOT = TEST_STORAGE_ROOT;
-    await fs.remove(TEST_STORAGE_ROOT);
-    await fs.ensureDir(TEST_STORAGE_ROOT);
+    // Clean and recreate test directory for each test
+    testDir = `${TEST_STORAGE_ROOT}-${Date.now()}-${Math.random()}`;
+    await fs.ensureDir(testDir);
+
+    // Create filesystem instance with unique test storage root
+    filesystem = createFilesystem(testDir);
+
+    // Initialize storage
+    await filesystem.initializeStorage();
   });
 
   afterEach(async () => {
-    // Cleanup
+    // Cleanup test directory
     try {
-      await fs.remove(TEST_STORAGE_ROOT);
+      if (testDir) {
+        await fs.remove(testDir);
+      }
     } catch (e) {
       // Ignore cleanup errors
     }
@@ -38,10 +35,8 @@ describe("Filesystem Module", () => {
 
   describe("initializeStorage", () => {
     it("should create all state directories", async () => {
-      await initializeStorage();
-
       for (const state of Object.values(JOB_STATES)) {
-        const dir = path.join(TEST_STORAGE_ROOT, "jobs", state);
+        const dir = path.join(testDir, "jobs", state);
         expect(await fs.pathExists(dir)).toBe(true);
       }
     });
@@ -49,10 +44,8 @@ describe("Filesystem Module", () => {
 
   describe("createJobFolder", () => {
     it("should create a job in NEW state", async () => {
-      await initializeStorage();
-
       const url = "https://youtube.com/watch?v=test123";
-      const { jobId, metadata } = await createJobFolder(url);
+      const { jobId, metadata } = await filesystem.createJobFolder(url);
 
       expect(jobId).toBeDefined();
       expect(metadata.state).toBe(JOB_STATES.NEW);
@@ -60,7 +53,7 @@ describe("Filesystem Module", () => {
       expect(metadata.createdAt).toBeDefined();
 
       // Verify folder exists
-      const jobDir = path.join(TEST_STORAGE_ROOT, "jobs", JOB_STATES.NEW, jobId);
+      const jobDir = path.join(testDir, "jobs", JOB_STATES.NEW, jobId);
       expect(await fs.pathExists(jobDir)).toBe(true);
 
       // Verify metadata file exists
@@ -75,12 +68,10 @@ describe("Filesystem Module", () => {
 
   describe("readMetadata", () => {
     it("should read metadata from filesystem", async () => {
-      await initializeStorage();
-
       const url = "https://youtube.com/watch?v=test123";
-      const { jobId, metadata: createdMetadata } = await createJobFolder(url);
+      const { jobId } = await filesystem.createJobFolder(url);
 
-      const readData = await readMetadata(jobId);
+      const readData = await filesystem.readMetadata(jobId);
 
       expect(readData).toBeDefined();
       expect(readData?.id).toBe(jobId);
@@ -89,19 +80,15 @@ describe("Filesystem Module", () => {
     });
 
     it("should return null for non-existent job", async () => {
-      await initializeStorage();
-
-      const result = await readMetadata("non-existent-job-id");
+      const result = await filesystem.readMetadata("non-existent-job-id");
       expect(result).toBeNull();
     });
   });
 
   describe("writeMetadata", () => {
     it("should update metadata", async () => {
-      await initializeStorage();
-
       const url = "https://youtube.com/watch?v=test123";
-      const { jobId, metadata } = await createJobFolder(url);
+      const { jobId, metadata } = await filesystem.createJobFolder(url);
 
       // Update metadata
       metadata.download = {
@@ -110,10 +97,10 @@ describe("Filesystem Module", () => {
         artist: "Test Artist",
       };
 
-      await writeMetadata(jobId, metadata);
+      await filesystem.writeMetadata(jobId, metadata);
 
       // Read back
-      const updated = await readMetadata(jobId);
+      const updated = await filesystem.readMetadata(jobId);
       expect(updated?.download?.title).toBe("Test Video");
       expect(updated?.download?.artist).toBe("Test Artist");
     });
@@ -121,12 +108,10 @@ describe("Filesystem Module", () => {
 
   describe("getJobStateDir", () => {
     it("should return correct state directory", async () => {
-      await initializeStorage();
-
       const url = "https://youtube.com/watch?v=test123";
-      const { jobId } = await createJobFolder(url);
+      const { jobId } = await filesystem.createJobFolder(url);
 
-      const result = await getJobStateDir(jobId);
+      const result = await filesystem.getJobStateDir(jobId);
 
       expect(result).toBeDefined();
       expect(result?.state).toBe(JOB_STATES.NEW);
@@ -134,68 +119,58 @@ describe("Filesystem Module", () => {
     });
 
     it("should return null for non-existent job", async () => {
-      await initializeStorage();
-
-      const result = await getJobStateDir("non-existent-job-id");
+      const result = await filesystem.getJobStateDir("non-existent-job-id");
       expect(result).toBeNull();
     });
   });
 
   describe("listJobsByState", () => {
     it("should list jobs in a specific state", async () => {
-      await initializeStorage();
-
       const url1 = "https://youtube.com/watch?v=test1";
       const url2 = "https://youtube.com/watch?v=test2";
 
-      const { jobId: jobId1 } = await createJobFolder(url1);
-      const { jobId: jobId2 } = await createJobFolder(url2);
+      const { jobId: jobId1 } = await filesystem.createJobFolder(url1);
+      const { jobId: jobId2 } = await filesystem.createJobFolder(url2);
 
-      const jobs = await listJobsByState(JOB_STATES.NEW);
+      const jobs = await filesystem.listJobsByState(JOB_STATES.NEW);
 
       expect(jobs.length).toBeGreaterThanOrEqual(2);
-      expect(jobs).toContain(jobId1);
-      expect(jobs).toContain(jobId2);
+      expect(jobs.some((j) => j === jobId1)).toBe(true);
+      expect(jobs.some((j) => j === jobId2)).toBe(true);
     });
 
     it("should return empty array for empty state", async () => {
-      await initializeStorage();
-
-      const jobs = await listJobsByState(JOB_STATES.DONE);
+      const jobs = await filesystem.listJobsByState(JOB_STATES.DONE);
       expect(jobs).toHaveLength(0);
     });
   });
 
   describe("listAllJobs", () => {
     it("should list all jobs across all states", async () => {
-      await initializeStorage();
-
       const url1 = "https://youtube.com/watch?v=test1";
       const url2 = "https://youtube.com/watch?v=test2";
 
-      const { jobId: jobId1 } = await createJobFolder(url1);
-      const { jobId: jobId2 } = await createJobFolder(url2);
+      const { jobId: jobId1 } = await filesystem.createJobFolder(url1);
+      const { jobId: jobId2 } = await filesystem.createJobFolder(url2);
 
-      const allJobs = await listAllJobs();
+      const allJobs = await filesystem.listAllJobs();
 
       expect(allJobs.length).toBeGreaterThanOrEqual(2);
       const jobIds = allJobs.map((j) => j.jobId);
-      expect(jobIds).toContain(jobId1);
-      expect(jobIds).toContain(jobId2);
+      expect(jobIds.some((id) => id === jobId1)).toBe(true);
+      expect(jobIds.some((id) => id === jobId2)).toBe(true);
       expect(allJobs[0].metadata).toBeDefined();
     });
   });
 
   describe("appendToJobLog", () => {
     it("should append to job log", async () => {
-      await initializeStorage();
+      const { jobId } = await filesystem.createJobFolder("https://youtube.com/watch?v=test");
 
-      const { jobId } = await createJobFolder("https://youtube.com/watch?v=test");
+      await filesystem.appendToJobLog(jobId, "Test log message 1");
+      await filesystem.appendToJobLog(jobId, "Test log message 2");
 
-      await appendToJobLog(jobId, "Test log message 1");
-      await appendToJobLog(jobId, "Test log message 2");
-
-      const logs = await readJobLogs(jobId);
+      const logs = await filesystem.readJobLogs(jobId);
 
       expect(logs.length).toBeGreaterThanOrEqual(2);
       const logContent = logs.join("\n");
@@ -204,22 +179,21 @@ describe("Filesystem Module", () => {
     });
 
     it("should throw for non-existent job", async () => {
-      await initializeStorage();
-
-      await expect(appendToJobLog("non-existent-job-id", "Test")).rejects.toThrow();
+      await expect(filesystem.appendToJobLog("non-existent-job-id", "Test")).rejects.toThrow();
     });
   });
 
   describe("readJobLogs", () => {
     it("should read job logs", async () => {
-      await initializeStorage();
+      const { jobId } = await filesystem.createJobFolder("https://youtube.com/watch?v=test");
 
-      const { jobId } = await createJobFolder("https://youtube.com/watch?v=test");
+      const initialLogs = await filesystem.readJobLogs(jobId);
+      expect(Array.isArray(initialLogs)).toBe(true);
 
-      await appendToJobLog(jobId, "Message 1");
-      await appendToJobLog(jobId, "Message 2");
+      await filesystem.appendToJobLog(jobId, "Message 1");
+      await filesystem.appendToJobLog(jobId, "Message 2");
 
-      const logs = await readJobLogs(jobId);
+      const logs = await filesystem.readJobLogs(jobId);
 
       expect(Array.isArray(logs)).toBe(true);
       const logContent = logs.join("\n");
@@ -230,31 +204,23 @@ describe("Filesystem Module", () => {
 
   describe("deleteJobFolder", () => {
     it("should delete job folder", async () => {
-      await initializeStorage();
-
-      const { jobId } = await createJobFolder("https://youtube.com/watch?v=test");
+      const { jobId } = await filesystem.createJobFolder("https://youtube.com/watch?v=test");
 
       // Verify it exists
-      const before = await getJobStateDir(jobId);
+      const before = await filesystem.getJobStateDir(jobId);
       expect(before).toBeDefined();
 
       // Delete
-      await deleteJobFolder(jobId);
+      await filesystem.deleteJobFolder(jobId);
 
       // Verify it's gone
-      const after = await getJobStateDir(jobId);
+      const after = await filesystem.getJobStateDir(jobId);
       expect(after).toBeNull();
     });
 
     it("should handle non-existent job gracefully", async () => {
-      await initializeStorage();
-
-      // Should not throw for non-existent job
-      try {
-        await deleteJobFolder("non-existent-job-id");
-      } catch (e) {
-        expect(false).toBe(true);
-      }
+      await filesystem.deleteJobFolder("non-existent-job-id");
+      expect(true).toBe(true);
     });
   });
 });

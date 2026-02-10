@@ -10,7 +10,7 @@
 - [x] Write vitest tests for filesystem module (15 tests)
 - [x] Write vitest tests for state machine (33 tests)
 - [x] Write vitest tests for atomic moves (14 tests)
-- [ ] Fix test isolation issue (STORAGE_ROOT caching)
+- [x] Fix test isolation issue (dependency injection + unique temp dirs)
 - [ ] Update server/routers/jobs.ts to use real filesystem instead of in-memory mock
 - [ ] Verify tRPC endpoints work with real persistence (create, list, get, logs, artifacts)
 - [ ] Verify UI renders correctly with real job state
@@ -21,7 +21,7 @@
 - [x] Write tests for illegal state transitions (should reject)
 - [x] Write tests for failure modes (state machine validates all modes)
 - [ ] Write tests for terminal state rendering in UI
-- [ ] Verify all tests pass before worker integration (59/63 passing)
+- [x] Verify all tests pass before worker integration (63/63 passing ✅)
 
 ## Phase 2: Real Persistence Integration
 

@@ -11,7 +11,7 @@
  * - Job exists because folder exists
  */
 
-import { listAllJobs } from "./filesystem";
+import { filesystem } from "./filesystem";
 import { getDb } from "../db";
 import { jobs as jobsTable } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -34,7 +34,7 @@ export async function initializeDatabaseFromFilesystem(): Promise<void> {
     console.log("[db-init] Cleared jobs table");
 
     // List all jobs from filesystem
-    const allJobs = await listAllJobs();
+    const allJobs = await filesystem.listAllJobs();
     console.log(`[db-init] Found ${allJobs.length} jobs in filesystem`);
 
     // Insert jobs into database
@@ -68,8 +68,8 @@ export async function syncJobToDatabase(jobId: string): Promise<void> {
     return;
   }
 
-  const allJobs = await listAllJobs();
-  const job = allJobs.find((j) => j.jobId === jobId);
+  const allJobs = await filesystem.listAllJobs();
+  const job = allJobs.find((j: { jobId: string }) => j.jobId === jobId);
 
   if (!job) {
     // Job deleted, remove from database
@@ -81,9 +81,9 @@ export async function syncJobToDatabase(jobId: string): Promise<void> {
   const { metadata, state } = job;
 
   // Check if exists
-    const queryDb = await getDb();
-    if (!queryDb) return;
-    const existing = await queryDb.select().from(jobsTable).where(eq(jobsTable.jobId, jobId)).limit(1);
+  const queryDb = await getDb();
+  if (!queryDb) return;
+  const existing = await queryDb.select().from(jobsTable).where(eq(jobsTable.jobId, jobId)).limit(1);
 
   if (existing && existing.length > 0) {
     // Update
@@ -112,5 +112,3 @@ export async function syncJobToDatabase(jobId: string): Promise<void> {
     });
   }
 }
-
-
