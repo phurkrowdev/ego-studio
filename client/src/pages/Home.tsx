@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -62,12 +63,13 @@ function JobSubmitForm() {
 }
 
 /**
- * JobList — Display all jobs with their status
+ /**
+ * JobList — Display all jobs with real-time updates
  */
 function JobList() {
-  // Fetch jobs list
+  const [, navigate] = useLocation();
   const { data: jobsList, isLoading, error, refetch } = trpc.jobs.list.useQuery(
-    { limit: 50 },
+    { limit: 50, offset: 0 },
     { refetchInterval: 2000 } // Poll every 2 seconds
   );
 
@@ -95,7 +97,11 @@ function JobList() {
           </thead>
           <tbody>
             {jobsList.map((job: any) => (
-              <tr key={job.jobId} style={{ borderBottom: "1px solid #eee" }}>
+              <tr
+                key={job.jobId}
+                style={{ borderBottom: "1px solid #eee", cursor: "pointer" }}
+                onClick={() => navigate(`/jobs/${job.jobId}`)}
+              >
                 <td style={{ padding: "0.5rem", fontSize: "0.85rem" }}>
                   {job.jobId.substring(0, 8)}...
                 </td>

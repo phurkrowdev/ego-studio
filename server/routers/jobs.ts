@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
 import * as JobsService from "../lib/jobs-service";
+import { retryJob } from "../lib/jobs-service-retry";
 
 /**
  * Jobs Router
@@ -116,6 +117,21 @@ export const jobsRouter = router({
     )
     .mutation(async ({ input }) => {
       const result = await JobsService.simulateFailure(input.jobId, input.reason);
+      return result;
+    }),
+
+  /**
+   * Retry a failed job
+   */
+  retry: publicProcedure
+    .input(
+      z.object({
+        jobId: z.string(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const result = await retryJob(input.jobId, input.reason);
       return result;
     }),
 });

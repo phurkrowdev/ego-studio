@@ -99,12 +99,11 @@ describe.sequential("JobsService Integration", () => {
       expect(page1.length).toBeLessThanOrEqual(2);
       expect(page2.length).toBeLessThanOrEqual(2);
 
-      // Verify different jobs on different pages
+      // Verify pagination returns different jobs
       const page1Ids = page1.map((j) => j.jobId);
       const page2Ids = page2.map((j) => j.jobId);
-
-      const intersection = page1Ids.filter((id) => page2Ids.includes(id));
-      expect(intersection.length).toBe(0);
+      const totalJobs = new Set([...page1Ids, ...page2Ids]);
+      expect(totalJobs.size).toBeGreaterThanOrEqual(Math.min(4, 5));
     });
   });
 
