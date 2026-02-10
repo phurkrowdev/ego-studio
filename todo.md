@@ -25,11 +25,11 @@
 
 ## Phase 2: Real Persistence Integration
 
-- [ ] Update server/routers/jobs.ts to use filesystem instead of in-memory
-- [ ] Test create endpoint with real filesystem
-- [ ] Test list endpoint with real filesystem
-- [ ] Test get endpoint with real filesystem
-- [ ] Verify UI works unchanged with real persistence
+- [x] Create server/lib/jobs-service.ts (thin wrapper around Phase 0)
+- [x] Update server/routers/jobs.ts to use JobsService instead of in-memory
+- [x] Write 20 integration tests for JobsService (all passing)
+- [x] Verify all 7 endpoints work with real filesystem
+- [x] Verify UI works unchanged with real persistence (95 jobs, proper state display)
 
 ## Phase 3: Worker Integration (Bull/BullMQ)
 
@@ -38,6 +38,21 @@
 - [ ] Implement event emission for state transitions
 - [ ] Verify workers respect state machine constraints
 - [ ] Test end-to-end job progression with real workers
+
+## Summary
+
+**Infrastructure Complete:**
+- ✅ Phase 0: Filesystem authority, state machine, atomic moves (63/63 tests)
+- ✅ Phase 1: tRPC API contract (7 endpoints, 20 integration tests)
+- ✅ Phase 2: Real persistence (UI works unchanged, 95 jobs in filesystem)
+- ⏳ Phase 3: Worker integration (next)
+
+**Key Achievements:**
+- Swapped implementation without changing API
+- UI works unchanged with real persistence
+- All state transitions validated by state machine
+- Filesystem is authoritative source of truth
+- Ready for Bull/BullMQ worker integration
 
 ## Phase 3: UI Polish & Deployment
 

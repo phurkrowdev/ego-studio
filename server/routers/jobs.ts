@@ -1,38 +1,23 @@
 import { z } from "zod";
 import { publicProcedure, router } from "../_core/trpc";
-import { v4 as uuidv4 } from "uuid";
+import * as JobsService from "../lib/jobs-service";
 
 /**
- * In-memory job storage (stub for demonstration)
- * In production, this will read from filesystem + database
+ * Jobs Router
+ *
+ * Public API endpoints for job management.
+ * All handlers delegate to JobsService which wraps Phase 0 infrastructure.
+ *
+ * Contract:
+ * - No endpoints added, removed, or renamed
+ * - Input/output shapes unchanged
+ * - UI works without modification
+ *
+ * Implementation:
+ * - Filesystem is authority (single source of truth)
+ * - State machine validates all transitions
+ * - Atomic moves guarantee consistency
  */
-const inMemoryJobs: Record<
-  string,
-  {
-    jobId: string;
-    state: "NEW" | "CLAIMED" | "RUNNING" | "DONE" | "FAILED";
-    youtube_url: string;
-    title?: string;
-    artist?: string;
-    download?: {
-      status: string;
-      reason?: string;
-      message?: string;
-      label?: string;
-    };
-    separation?: {
-      status: string;
-    };
-    lyrics?: {
-      status: string;
-    };
-    audacity?: {
-      status: string;
-    };
-    created_at: string;
-    updated_at: string;
-  }
-> = {};
 
 export const jobsRouter = router({
   /**
@@ -41,27 +26,8 @@ export const jobsRouter = router({
   create: publicProcedure
     .input(z.object({ url: z.string().url() }))
     .mutation(async ({ input }) => {
-      const jobId = uuidv4();
-      const now = new Date().toISOString();
-
-      const job = {
-        jobId,
-        state: "NEW" as const,
-        youtube_url: input.url,
-        title: undefined,
-        artist: undefined,
-        created_at: now,
-        updated_at: now,
-      };
-
-      inMemoryJobs[jobId] = job;
-
-      console.log(`[jobs.create] Created job ${jobId} for ${input.url}`);
-
-      return {
-        jobId,
-        metadata: job,
-      };
+      const result = await JobsService.createJob(input.url);
+      return result;
     }),
 
   /**
@@ -76,31 +42,12 @@ export const jobsRouter = router({
       })
     )
     .query(async ({ input }) => {
-      let jobs = Object.values(inMemoryJobs);
-
-      if (input.state) {
-        jobs = jobs.filter((j) => j.state === input.state);
-      }
-
-      // Sort by created_at descending
-      jobs.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      const paginated = jobs.slice(input.offset, input.offset + input.limit);
-
-      console.log(
-        `[jobs.list] Returning ${paginated.length} jobs (total: ${jobs.length})`
-      );
-
-      return paginated.map((job) => ({
-        jobId: job.jobId,
-        state: job.state,
-        metadata: job,
-        createdAt: new Date(job.created_at),
-        updatedAt: new Date(job.updated_at),
-      }));
+      const results = await JobsService.listJobs({
+        limit: input.limit,
+        offset: input.offset,
+        state: input.state,
+      });
+      return results;
     }),
 
   /**
@@ -109,21 +56,8 @@ export const jobsRouter = router({
   get: publicProcedure
     .input(z.object({ jobId: z.string() }))
     .query(async ({ input }) => {
-      const job = inMemoryJobs[input.jobId];
-
-      if (!job) {
-        throw new Error(`Job ${input.jobId} not found`);
-      }
-
-      console.log(`[jobs.get] Retrieved job ${input.jobId}`);
-
-      return {
-        jobId: job.jobId,
-        state: job.state,
-        metadata: job,
-        createdAt: new Date(job.created_at),
-        updatedAt: new Date(job.updated_at),
-      };
+      const result = await JobsService.getJob(input.jobId);
+      return result;
     }),
 
   /**
@@ -132,21 +66,8 @@ export const jobsRouter = router({
   logs: publicProcedure
     .input(z.object({ jobId: z.string() }))
     .query(async ({ input }) => {
-      const job = inMemoryJobs[input.jobId];
-
-      if (!job) {
-        throw new Error(`Job ${input.jobId} not found`);
-      }
-
-      console.log(`[jobs.logs] Retrieved logs for job ${input.jobId}`);
-
-      return {
-        jobId: input.jobId,
-        logs: [
-          `[${job.created_at}] Job created`,
-          `[${new Date().toISOString()}] Job in state ${job.state}`,
-        ],
-      };
+      const result = await JobsService.getJobLogs(input.jobId);
+      return result;
     }),
 
   /**
@@ -155,33 +76,16 @@ export const jobsRouter = router({
   artifacts: publicProcedure
     .input(z.object({ jobId: z.string() }))
     .query(async ({ input }) => {
-      const job = inMemoryJobs[input.jobId];
-
-      if (!job) {
-        throw new Error(`Job ${input.jobId} not found`);
-      }
-
-      console.log(`[jobs.artifacts] Retrieved artifacts for job ${input.jobId}`);
-
-      return {
-        jobId: input.jobId,
-        download: job.download,
-        separation: job.separation,
-        lyrics: job.lyrics,
-        audacity: job.audacity,
-      };
+      const result = await JobsService.getJobArtifacts(input.jobId);
+      return result;
     }),
 
   /**
    * Health check
    */
-  health: publicProcedure.query(() => {
-    console.log("[jobs.health] Health check");
-    return {
-      status: "ok",
-      timestamp: new Date(),
-      jobsCount: Object.keys(inMemoryJobs).length,
-    };
+  health: publicProcedure.query(async () => {
+    const result = await JobsService.health();
+    return result;
   }),
 
   /**
@@ -191,42 +95,8 @@ export const jobsRouter = router({
   simulateProgress: publicProcedure
     .input(z.object({ jobId: z.string() }))
     .mutation(async ({ input }) => {
-      const job = inMemoryJobs[input.jobId];
-
-      if (!job) {
-        throw new Error(`Job ${input.jobId} not found`);
-      }
-
-      // Simulate state progression
-      const transitions: Record<string, string> = {
-        NEW: "CLAIMED",
-        CLAIMED: "RUNNING",
-        RUNNING: "DONE",
-      };
-
-      const nextState = transitions[job.state];
-
-      if (nextState) {
-        job.state = nextState as any;
-        job.updated_at = new Date().toISOString();
-
-        if (nextState === "DONE") {
-          job.download = { status: "COMPLETE" };
-          job.separation = { status: "COMPLETE" };
-          job.title = "Example Song";
-          job.artist = "Example Artist";
-        }
-
-        console.log(
-          `[jobs.simulateProgress] Transitioned job ${input.jobId} to ${nextState}`
-        );
-      }
-
-      return {
-        jobId: job.jobId,
-        state: job.state,
-        metadata: job,
-      };
+      const result = await JobsService.simulateProgress(input.jobId);
+      return result;
     }),
 
   /**
@@ -245,28 +115,7 @@ export const jobsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const job = inMemoryJobs[input.jobId];
-
-      if (!job) {
-        throw new Error(`Job ${input.jobId} not found`);
-      }
-
-      job.state = "FAILED";
-      job.updated_at = new Date().toISOString();
-      job.download = {
-        status: "FAILED",
-        reason: input.reason,
-        message: `Download failed: ${input.reason}`,
-      };
-
-      console.log(
-        `[jobs.simulateFailure] Job ${input.jobId} failed with reason ${input.reason}`
-      );
-
-      return {
-        jobId: job.jobId,
-        state: job.state,
-        metadata: job,
-      };
+      const result = await JobsService.simulateFailure(input.jobId, input.reason);
+      return result;
     }),
 });
