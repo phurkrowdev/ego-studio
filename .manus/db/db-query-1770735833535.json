@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `jobs` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `jobId` varchar(64) NOT NULL UNIQUE,\n  `state` enum('NEW', 'CLAIMED', 'RUNNING', 'DONE', 'FAILED') NOT NULL,\n  `metadata` text NOT NULL,\n  `ownerId` varchar(64),\n  `leaseExpiresAt` timestamp NULL,\n  `createdAt` timestamp NOT NULL,\n  `updatedAt` timestamp NOT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `jobs_jobId_unique` (`jobId`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3j2DRnGrfNqSkBN.root --database mSBj9oTCK7Gjc5XajK8o6h --execute CREATE TABLE IF NOT EXISTS `jobs` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `jobId` varchar(64) NOT NULL UNIQUE,\n  `state` enum('NEW', 'CLAIMED', 'RUNNING', 'DONE', 'FAILED') NOT NULL,\n  `metadata` text NOT NULL,\n  `ownerId` varchar(64),\n  `leaseExpiresAt` timestamp NULL,\n  `createdAt` timestamp NOT NULL,\n  `updatedAt` timestamp NOT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `jobs_jobId_unique` (`jobId`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 690
+}

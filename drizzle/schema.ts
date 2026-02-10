@@ -25,4 +25,20 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/**
+ * Jobs table — mirrors filesystem state for querying
+ * Source of truth is filesystem; this is a derived index
+ */
+export const jobs = mysqlTable("jobs", {
+  id: int("id").autoincrement().primaryKey(),
+  jobId: varchar("jobId", { length: 64 }).notNull().unique(),
+  state: mysqlEnum("state", ["NEW", "CLAIMED", "RUNNING", "DONE", "FAILED"]).notNull(),
+  metadata: text("metadata").notNull(), // JSON string
+  ownerId: varchar("ownerId", { length: 64 }),
+  leaseExpiresAt: timestamp("leaseExpiresAt"),
+  createdAt: timestamp("createdAt").notNull(),
+  updatedAt: timestamp("updatedAt").notNull(),
+});
+
+export type Job = typeof jobs.$inferSelect;
+export type InsertJob = typeof jobs.$inferInsert;
