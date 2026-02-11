@@ -98,3 +98,16 @@
 - [ ] Add error boundary for graceful failure handling
 - [ ] Test crash recovery (jobs survive restarts)
 - [ ] Deploy to production
+
+## Phase 5: Real yt-dlp, Lyrics Worker, UI Enhancements
+
+- [x] Replace mock yt-dlp with real execFile() calls
+- [x] Stream yt-dlp stdout/stderr to job logs
+- [x] Map yt-dlp errors to failure reasons (CAPTCHA, RATE_LIMITED, COPYRIGHT, DOWNLOAD_ERROR)
+- [x] Create server/workers/lyrics-worker.ts
+- [x] Wire Lyrics auto-enqueue after Demucs completion (in queue.ts)
+- [x] Add state machine support for LYRICS_WORKER actor (via SYSTEM actor)
+- [x] Add UI status badges (color-coded by state: NEW, CLAIMED, RUNNING, DONE, FAILED)
+- [x] Add inline retry button for FAILED jobs
+- [x] Verify all 98 tests passing
+- [x] Verify UI reflects live job state updates via polling

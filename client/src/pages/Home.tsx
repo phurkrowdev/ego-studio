@@ -63,7 +63,37 @@ function JobSubmitForm() {
 }
 
 /**
- /**
+ * StateBadge — Color-coded badge for job state
+ */
+function StateBadge({ state }: { state: string }) {
+  const stateColors: Record<string, { bg: string; text: string; label: string }> = {
+    NEW: { bg: "#e3f2fd", text: "#1976d2", label: "New" },
+    CLAIMED: { bg: "#fff3e0", text: "#f57c00", label: "Claimed" },
+    RUNNING: { bg: "#f3e5f5", text: "#7b1fa2", label: "Running" },
+    DONE: { bg: "#e8f5e9", text: "#388e3c", label: "Done" },
+    FAILED: { bg: "#ffebee", text: "#d32f2f", label: "Failed" },
+  };
+
+  const config = stateColors[state] || { bg: "#f5f5f5", text: "#666", label: state };
+
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        backgroundColor: config.bg,
+        color: config.text,
+        padding: "0.25rem 0.75rem",
+        borderRadius: "4px",
+        fontSize: "0.85rem",
+        fontWeight: "bold",
+      }}
+    >
+      {config.label}
+    </span>
+  );
+}
+
+/**
  * JobList — Display all jobs with real-time updates
  */
 function JobList() {
@@ -72,6 +102,17 @@ function JobList() {
     { limit: 50, offset: 0 },
     { refetchInterval: 2000 } // Poll every 2 seconds
   );
+
+  const retryMutation = trpc.jobs.retry.useMutation({
+    onSuccess: () => {
+      refetch();
+    },
+  });
+
+  const handleRetry = (e: React.MouseEvent, jobId: string) => {
+    e.stopPropagation();
+    retryMutation.mutate({ jobId });
+  };
 
   useEffect(() => {
     console.log("Jobs updated:", jobsList);
@@ -106,7 +147,7 @@ function JobList() {
                   {job.jobId.substring(0, 8)}...
                 </td>
                 <td style={{ padding: "0.5rem" }}>
-                  <strong>{job.state}</strong>
+                  <StateBadge state={job.state} />
                 </td>
                 <td style={{ padding: "0.5rem", fontSize: "0.85rem" }}>
                   {job.metadata?.youtube_url ? (
@@ -120,14 +161,30 @@ function JobList() {
                 <td style={{ padding: "0.5rem" }}>
                   {job.state === "DONE" && <span style={{ color: "green" }}>✓ Complete</span>}
                   {job.state === "FAILED" && (
-                    <span style={{ color: "red" }}>
-                      ✗ Failed
+                    <div>
+                      <span style={{ color: "red" }}>✗ Failed</span>
                       {job.metadata?.download?.reason && (
                         <div style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
                           Reason: {job.metadata.download.reason}
                         </div>
                       )}
-                    </span>
+                      <button
+                        onClick={(e) => handleRetry(e, job.jobId)}
+                        style={{
+                          marginTop: "0.5rem",
+                          padding: "0.25rem 0.5rem",
+                          fontSize: "0.75rem",
+                          backgroundColor: "#d32f2f",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "3px",
+                          cursor: "pointer",
+                        }}
+                        disabled={retryMutation.isPending}
+                      >
+                        {retryMutation.isPending ? "Retrying..." : "Retry"}
+                      </button>
+                    </div>
                   )}
                   {job.state !== "DONE" && job.state !== "FAILED" && (
                     <span style={{ color: "blue" }}>⟳ {job.state}</span>
@@ -150,17 +207,11 @@ function JobList() {
  */
 export default function Home() {
   return (
-    <div style={{ padding: "2rem", fontFamily: "monospace" }}>
+    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "2rem" }}>
       <h1>E.G.O. Studio Audio — RIF Ingestion</h1>
       <p>Reusable Ingestion Framework for audio processing</p>
-
       <JobSubmitForm />
       <JobList />
-
-      <div style={{ marginTop: "2rem", padding: "1rem", backgroundColor: "#f5f5f5" }}>
-        <h3>Debug Info</h3>
-        <p>Check browser console for detailed logs.</p>
-      </div>
     </div>
   );
 }
