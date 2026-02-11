@@ -68,7 +68,8 @@
 - [x] Update state machine for multi-stage pipeline (DONE → CLAIMED allowed)
 - [x] Update job-state.ts isTerminalState/isIntermediateState for multi-stage
 - [x] Update job-state.test.ts for multi-stage transitions (91/91 tests passing)
-- [ ] Integrate Demucs worker into Bull queue
+- [x] Integrate Demucs worker into Bull queue (server/lib/queue.ts)
+- [x] Auto-enqueue Demucs after yt-dlp completes
 - [ ] Test end-to-end job progression through multiple stages
 - [ ] Verify artifacts appear in UI
 
