@@ -57,7 +57,12 @@ describe("State Machine", () => {
       expect(result.valid).toBe(true);
     });
 
-    it("should reject DONE -> RUNNING (terminal state)", () => {
+    it("should allow DONE -> CLAIMED by DEMUCS_WORKER (multi-stage)", () => {
+      const result = validateTransition(JOB_STATES.DONE, JOB_STATES.CLAIMED, Actor.DEMUCS_WORKER);
+      expect(result.valid).toBe(true);
+    });
+
+    it("should reject DONE -> RUNNING (invalid transition)", () => {
       const result = validateTransition(JOB_STATES.DONE, JOB_STATES.RUNNING, Actor.SYSTEM);
       expect(result.valid).toBe(false);
       expect(result.reason).toContain("Invalid transition");
@@ -106,9 +111,9 @@ describe("State Machine", () => {
       expect(states).toContain(JOB_STATES.NEW); // Reclaim
     });
 
-    it("should return empty array for DONE (terminal)", () => {
+    it("should return valid next states for DONE (multi-stage pipeline)", () => {
       const states = getValidNextStates(JOB_STATES.DONE);
-      expect(states).toHaveLength(0);
+      expect(states).toContain(JOB_STATES.CLAIMED); // Can transition to next stage (Demucs)
     });
 
     it("should return valid next states for FAILED", () => {
@@ -127,7 +132,15 @@ describe("State Machine", () => {
     it("should return authorized actors for CLAIMED -> RUNNING", () => {
       const actors = getAuthorizedActors(JOB_STATES.CLAIMED, JOB_STATES.RUNNING);
       expect(actors).toContain(Actor.DOWNLOAD_WORKER);
+      expect(actors).toContain(Actor.DEMUCS_WORKER);
       expect(actors).not.toContain(Actor.SYSTEM);
+    });
+
+    it("should return authorized actors for DONE -> CLAIMED", () => {
+      const actors = getAuthorizedActors(JOB_STATES.DONE, JOB_STATES.CLAIMED);
+      expect(actors).toContain(Actor.DEMUCS_WORKER);
+      expect(actors).toContain(Actor.LYRICS_WORKER);
+      expect(actors).toContain(Actor.AUDACITY_WORKER);
     });
 
     it("should return authorized actors for RUNNING -> DONE", () => {
@@ -144,8 +157,8 @@ describe("State Machine", () => {
   });
 
   describe("isTerminalState", () => {
-    it("should return true for DONE", () => {
-      expect(isTerminalState(JOB_STATES.DONE)).toBe(true);
+    it("should return false for DONE (not terminal in multi-stage pipeline)", () => {
+      expect(isTerminalState(JOB_STATES.DONE)).toBe(false);
     });
 
     it("should return true for FAILED", () => {
@@ -178,8 +191,8 @@ describe("State Machine", () => {
       expect(isIntermediateState(JOB_STATES.NEW)).toBe(false);
     });
 
-    it("should return false for DONE", () => {
-      expect(isIntermediateState(JOB_STATES.DONE)).toBe(false);
+    it("should return true for DONE (intermediate in multi-stage pipeline)", () => {
+      expect(isIntermediateState(JOB_STATES.DONE)).toBe(true);
     });
 
     it("should return false for FAILED", () => {

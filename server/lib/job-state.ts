@@ -40,8 +40,8 @@ const TRANSITION_RULES: Record<string, Record<string, Actor[]>> = {
     [JOB_STATES.CLAIMED]: [Actor.SYSTEM, Actor.DOWNLOAD_WORKER],
   },
   [JOB_STATES.CLAIMED]: {
-    [JOB_STATES.RUNNING]: [Actor.DOWNLOAD_WORKER],
-    [JOB_STATES.NEW]: [Actor.SYSTEM], // Reclaim on lease expiry
+    [JOB_STATES.RUNNING]: [Actor.DOWNLOAD_WORKER, Actor.DEMUCS_WORKER, Actor.LYRICS_WORKER, Actor.AUDACITY_WORKER],
+    [JOB_STATES.NEW]: [Actor.SYSTEM],
   },
   [JOB_STATES.RUNNING]: {
     [JOB_STATES.DONE]: [Actor.DOWNLOAD_WORKER, Actor.DEMUCS_WORKER, Actor.AUDACITY_WORKER],
@@ -49,7 +49,8 @@ const TRANSITION_RULES: Record<string, Record<string, Actor[]>> = {
     [JOB_STATES.NEW]: [Actor.SYSTEM], // Reclaim on lease expiry
   },
   [JOB_STATES.DONE]: {
-    // Terminal state, no transitions
+    // Can transition to CLAIMED for next pipeline stage (e.g., Demucs after download)
+    [JOB_STATES.CLAIMED]: [Actor.DEMUCS_WORKER, Actor.LYRICS_WORKER, Actor.AUDACITY_WORKER],
   },
   [JOB_STATES.FAILED]: {
     [JOB_STATES.NEW]: [Actor.SYSTEM, Actor.USER], // Retry
@@ -102,14 +103,17 @@ export function getAuthorizedActors(fromState: JobState, toState: JobState): Act
 
 /**
  * Check if a state is terminal
+ * In multi-stage pipeline, only FAILED is truly terminal.
+ * DONE can transition to CLAIMED for next stage.
  */
 export function isTerminalState(state: JobState): boolean {
-  return state === JOB_STATES.DONE || state === JOB_STATES.FAILED;
+  return state === JOB_STATES.FAILED;
 }
 
 /**
  * Check if a state is intermediate
+ * In multi-stage pipeline, DONE is also intermediate (can transition to CLAIMED).
  */
 export function isIntermediateState(state: JobState): boolean {
-  return state === JOB_STATES.CLAIMED || state === JOB_STATES.RUNNING;
+  return state === JOB_STATES.CLAIMED || state === JOB_STATES.RUNNING || state === JOB_STATES.DONE;
 }

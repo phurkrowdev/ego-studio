@@ -62,14 +62,23 @@
 - Retry logic for FAILED jobs
 - 89 tests covering all critical paths
 
-## Phase 4: Polish & Deployment
+## Phase 4A: Demucs Worker Integration
+
+- [x] Create server/workers/demucs-worker.ts (mock execution, 5% failure rate)
+- [x] Update state machine for multi-stage pipeline (DONE → CLAIMED allowed)
+- [x] Update job-state.ts isTerminalState/isIntermediateState for multi-stage
+- [x] Update job-state.test.ts for multi-stage transitions (91/91 tests passing)
+- [ ] Integrate Demucs worker into Bull queue
+- [ ] Test end-to-end job progression through multiple stages
+- [ ] Verify artifacts appear in UI
+
+## Phase 4B: Polish & Deployment
 
 - [ ] Add styling to job detail page
 - [ ] Implement real yt-dlp integration
-- [ ] Wire Demucs worker
+- [ ] Implement real Demucs integration
 - [ ] End-to-end testing
 - [ ] Performance optimization
-- [ ] Deployment preparation
 - [ ] Add error boundary for graceful failure handling
 - [ ] Test crash recovery (jobs survive restarts)
 - [ ] Deploy to production
