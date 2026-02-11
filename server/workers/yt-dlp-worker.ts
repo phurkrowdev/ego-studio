@@ -16,6 +16,7 @@ import * as JobsService from "../lib/jobs-service";
 import { filesystem } from "../lib/filesystem";
 import { Actor } from "../lib/job-state";
 import { createMoveOperations } from "../lib/job-moves";
+import { enqueueDemucsJob } from "../lib/queue";
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || "/tmp/ego-studio-jobs";
 const moves = createMoveOperations(filesystem, STORAGE_ROOT);
@@ -146,6 +147,17 @@ export async function processYtDlpJob(job: Job<{ jobId: string }>): Promise<void
     // Move to DONE
     await moves.moveJob(jobId, "RUNNING" as any, "DONE" as any, Actor.DOWNLOAD_WORKER);
 
+    // Auto-enqueue for Demucs processing
+    try {
+      console.log(`[yt-dlp-worker] Auto-enqueueing job ${jobId} for Demucs processing`);
+      await filesystem.appendToJobLog(jobId, `[WORKER] Download complete, enqueueing for audio separation`);
+      await enqueueDemucsJob(jobId);
+      console.log(`[yt-dlp-worker] Job ${jobId} enqueued for Demucs`);
+    } catch (enqueueError) {
+      console.error(`[yt-dlp-worker] Failed to enqueue Demucs job for ${jobId}:`, enqueueError);
+      await filesystem.appendToJobLog(jobId, `[WORKER] WARNING: Failed to enqueue for Demucs: ${String(enqueueError)}`);
+    }
+
     console.log(`[yt-dlp-worker] Job ${jobId} finished successfully`);
   } catch (error) {
     console.error(`[yt-dlp-worker] Error processing job ${jobId}:`, error);
@@ -190,6 +202,7 @@ export async function processYtDlpJob(job: Job<{ jobId: string }>): Promise<void
  * Configure Bull job options
  */
 export const YT_DLP_QUEUE_NAME = "yt-dlp-downloads";
+export const DEMUCS_QUEUE_NAME = "demucs-separation";
 
 export const JOB_OPTIONS = {
   attempts: 3,
