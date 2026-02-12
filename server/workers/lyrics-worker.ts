@@ -1,14 +1,14 @@
 /**
  * Lyrics Worker
  *
- * Extracts lyrics from audio or metadata.
+ * Extracts lyrics from audio or metadata using Genius API.
  * Consumes jobs that have completed Demucs separation.
  * Transitions: DONE (demucs) → CLAIMED (lyrics) → RUNNING → DONE or FAILED
  *
  * Pattern:
  * 1. Find jobs with demucs DONE
  * 2. Claim for Lyrics extraction
- * 3. Execute lyrics extraction (mock first, real API later)
+ * 3. Execute lyrics extraction (Genius API with fallback to mock)
  * 4. Write lyrics as artifacts
  * 5. Transition to DONE or FAILED
  */
@@ -18,6 +18,7 @@ import { createFilesystem } from "../lib/filesystem";
 import { createMoveOperations } from "../lib/job-moves";
 import { Actor } from "../lib/job-state";
 import { JOB_STATES } from "../lib/filesystem";
+import { getLyricsWithFallback } from "../lib/lyrics-api";
 
 export const LYRICS_QUEUE_NAME = "lyrics-extraction";
 
@@ -34,35 +35,6 @@ export const JOB_OPTIONS = {
 const STORAGE_ROOT = process.env.STORAGE_ROOT || "/tmp/ego-studio-jobs";
 const filesystem = createFilesystem(STORAGE_ROOT);
 const moves = createMoveOperations(filesystem, STORAGE_ROOT);
-
-/**
- * Mock lyrics extraction
- * Returns lyrics or failure
- */
-async function mockLyricsExtraction(title: string): Promise<{
-  success: boolean;
-  lyrics?: string;
-  error?: string;
-  reason?: string;
-}> {
-  // Simulate processing time
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
-  // 5% failure rate
-  if (Math.random() < 0.05) {
-    return {
-      success: false,
-      error: "Lyrics not found",
-      reason: "NOT_FOUND",
-    };
-  }
-
-  // Success: return mock lyrics
-  return {
-    success: true,
-    lyrics: `[00:00] Verse 1\n[00:15] Chorus\n[00:30] Verse 2\n[00:45] Chorus\n[01:00] Bridge\n[01:15] Chorus\nFor: ${title}`,
-  };
-}
 
 /**
  * Process a single Lyrics job
@@ -109,15 +81,21 @@ export async function processLyricsJob(job: Job<{ jobId: string }>): Promise<voi
       throw new Error(`Job metadata lost for ${jobId}`);
     }
 
-    await filesystem.appendToJobLog(jobId, `[LYRICS-WORKER] Extracting lyrics`);
+    await filesystem.appendToJobLog(jobId, `[LYRICS-WORKER] Extracting lyrics via Genius API`);
 
     const title = metadata.download?.title || "Unknown";
-    const result = await mockLyricsExtraction(title);
+    const artist = metadata.download?.artist || "Unknown";
+    
+    console.log(`[lyrics-worker] Fetching lyrics for "${title}" by "${artist}"`);
+    const result = await getLyricsWithFallback(title, artist);
 
     if (!result.success) {
       // Step 5a: Fail the job (RUNNING → FAILED)
       console.log(`[lyrics-worker] Job ${jobId} failed: ${result.reason}`);
-      await filesystem.appendToJobLog(jobId, `[LYRICS-WORKER] Extraction failed: ${result.reason}`);
+      await filesystem.appendToJobLog(
+        jobId,
+        `[LYRICS-WORKER] Extraction failed: ${result.reason} - ${result.error}`
+      );
 
       // Update metadata with failure info
       const updated = await filesystem.readMetadata(jobId);
@@ -125,6 +103,7 @@ export async function processLyricsJob(job: Job<{ jobId: string }>): Promise<voi
         updated.lyrics = {
           status: "FAILED",
           error: result.error,
+          provider: result.source,
         };
         await filesystem.writeMetadata(jobId, updated);
       }
@@ -134,8 +113,11 @@ export async function processLyricsJob(job: Job<{ jobId: string }>): Promise<voi
     }
 
     // Step 5b: Complete the job (RUNNING → DONE)
-    console.log(`[lyrics-worker] Job ${jobId} completed successfully`);
-    await filesystem.appendToJobLog(jobId, `[LYRICS-WORKER] Lyrics extraction complete`);
+    console.log(`[lyrics-worker] Job ${jobId} completed successfully (source: ${result.source})`);
+    await filesystem.appendToJobLog(
+      jobId,
+      `[LYRICS-WORKER] Lyrics extraction complete (source: ${result.source}, confidence: ${result.confidence})`
+    );
 
     // Write lyrics artifact
     if (result.lyrics) {
@@ -148,33 +130,30 @@ export async function processLyricsJob(job: Job<{ jobId: string }>): Promise<voi
     if (updated) {
       updated.lyrics = {
         status: "COMPLETE",
+        confidence: result.confidence,
+        provider: result.source,
       };
       await filesystem.writeMetadata(jobId, updated);
     }
 
     await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.DONE as any, Actor.SYSTEM);
-
-    console.log(`[lyrics-worker] Job ${jobId} finished successfully`);
+    console.log(`[lyrics-worker] Job ${jobId} transitioned to DONE`);
   } catch (error) {
-    console.error(`[lyrics-worker] Error processing job ${jobId}:`, error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[lyrics-worker] Job ${jobId} error:`, message);
 
-    // Log error
     try {
-      await filesystem.appendToJobLog(jobId, `[LYRICS-WORKER] ERROR: ${String(error)}`);
+      await filesystem.appendToJobLog(jobId, `[LYRICS-WORKER] Error: ${message}`);
+      const metadata = await filesystem.readMetadata(jobId);
+      if (metadata) {
+        metadata.lyrics = {
+          status: "FAILED",
+          error: message,
+        };
+        await filesystem.writeMetadata(jobId, metadata);
+      }
     } catch (logError) {
       console.error(`[lyrics-worker] Failed to log error for job ${jobId}:`, logError);
     }
-
-    // Try to mark as failed if not already
-    try {
-      const metadata = await filesystem.readMetadata(jobId);
-      if (metadata && metadata.state === JOB_STATES.RUNNING) {
-        await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.FAILED as any, Actor.SYSTEM);
-      }
-    } catch (failError) {
-      console.error(`[lyrics-worker] Failed to mark job as failed:`, failError);
-    }
-
-    throw error;
   }
 }
