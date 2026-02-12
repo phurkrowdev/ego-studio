@@ -8,16 +8,22 @@
  * Pattern:
  * 1. Find jobs with download DONE
  * 2. Claim for Demucs processing
- * 3. Execute Demucs (mock first)
+ * 3. Execute Demucs (real execFile)
  * 4. Write stems as artifacts
  * 5. Transition to DONE or FAILED
  */
 
 import { Job } from "bull";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { createFilesystem } from "../lib/filesystem";
 import { createMoveOperations } from "../lib/job-moves";
 import { Actor } from "../lib/job-state";
 import { JOB_STATES } from "../lib/filesystem";
+import * as fs from "fs-extra";
+import * as path from "path";
+
+const execFileAsync = promisify(execFile);
 
 export const DEMUCS_QUEUE_NAME = "demucs-processing";
 
@@ -36,39 +42,75 @@ const filesystem = createFilesystem(STORAGE_ROOT);
 const moves = createMoveOperations(filesystem, STORAGE_ROOT);
 
 /**
- * Mock Demucs execution
- * Returns stems or failure
+ * Real Demucs execution
+ * Returns stems or failure with error mapping
  */
-async function mockDemucsExecution(audioPath: string): Promise<{
+async function executeDemucs(audioPath: string, outputDir: string): Promise<{
   success: boolean;
   stems?: Record<string, string>;
   error?: string;
   reason?: string;
 }> {
-  // Simulate processing time
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  try {
+    // Ensure output directory exists
+    await fs.ensureDir(outputDir);
 
-  // 5% failure rate
-  if (Math.random() < 0.05) {
-    const reasons = ["DEMUCS_ERROR", "AUDIO_CORRUPT", "PROCESSING_TIMEOUT"];
-    const reason = reasons[Math.floor(Math.random() * reasons.length)];
+    // Execute demucs command
+    // demucs -o <output_dir> <audio_file>
+    const { stdout, stderr } = await execFileAsync("demucs", ["-o", outputDir, audioPath], {
+      timeout: 600000, // 10 minutes
+      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    });
+
+    // Log output
+    if (stdout) console.log(`[demucs-worker] stdout: ${stdout}`);
+    if (stderr) console.log(`[demucs-worker] stderr: ${stderr}`);
+
+    // Find generated stem files
+    const stemDir = path.join(outputDir, "htdemucs", path.basename(audioPath, path.extname(audioPath)));
+    const stems: Record<string, string> = {};
+
+    if (await fs.pathExists(stemDir)) {
+      const stemFiles = await fs.readdir(stemDir);
+      for (const file of stemFiles) {
+        const stemPath = path.join(stemDir, file);
+        const stemName = path.basename(file, path.extname(file));
+        stems[stemName] = stemPath;
+      }
+    }
+
+    if (Object.keys(stems).length === 0) {
+      return {
+        success: false,
+        error: "No stems generated",
+        reason: "NO_STEMS_GENERATED",
+      };
+    }
+
+    return {
+      success: true,
+      stems,
+    };
+  } catch (error: any) {
+    const errorMsg = error.message || String(error);
+    const stderr = error.stderr || "";
+
+    // Map errors to failure reasons
+    let reason = "DEMUCS_ERROR";
+    if (errorMsg.includes("CUDA out of memory") || stderr.includes("out of memory")) {
+      reason = "GPU_MEMORY";
+    } else if (errorMsg.includes("timeout") || stderr.includes("timeout")) {
+      reason = "TIMEOUT";
+    } else if (errorMsg.includes("Invalid data") || stderr.includes("Invalid audio")) {
+      reason = "INVALID_AUDIO_FORMAT";
+    }
+
     return {
       success: false,
-      error: `Demucs processing failed: ${reason}`,
+      error: `Demucs execution failed: ${errorMsg}`,
       reason,
     };
   }
-
-  // Success: return mock stem paths
-  return {
-    success: true,
-    stems: {
-      vocals: `${audioPath}.vocals.wav`,
-      drums: `${audioPath}.drums.wav`,
-      bass: `${audioPath}.bass.wav`,
-      other: `${audioPath}.other.wav`,
-    },
-  };
 }
 
 /**
@@ -96,9 +138,9 @@ export async function processDemucsJob(job: Job<{ jobId: string }>): Promise<voi
 
     // Step 2: Claim job for Demucs processing (DONE → CLAIMED)
     if (metadata.state === JOB_STATES.DONE) {
-      console.log(`[demucs-worker] Claiming job ${jobId} for Demucs`);
+      console.log(`[demucs-worker] Claiming job ${jobId} for Demucs processing`);
       await filesystem.appendToJobLog(jobId, `[DEMUCS-WORKER] Claiming job for audio separation`);
-      await moves.moveJob(jobId, JOB_STATES.DONE as any, JOB_STATES.CLAIMED as any, Actor.DEMUCS_WORKER);
+      await moves.moveJob(jobId, JOB_STATES.DONE as any, JOB_STATES.CLAIMED as any, Actor.SYSTEM);
     }
 
     // Step 3: Start processing (CLAIMED → RUNNING)
@@ -106,7 +148,7 @@ export async function processDemucsJob(job: Job<{ jobId: string }>): Promise<voi
     if (metadata?.state === JOB_STATES.CLAIMED) {
       console.log(`[demucs-worker] Starting Demucs for job ${jobId}`);
       await filesystem.appendToJobLog(jobId, `[DEMUCS-WORKER] Starting audio separation`);
-      await moves.moveJob(jobId, JOB_STATES.CLAIMED as any, JOB_STATES.RUNNING as any, Actor.DEMUCS_WORKER);
+      await moves.moveJob(jobId, JOB_STATES.CLAIMED as any, JOB_STATES.RUNNING as any, Actor.SYSTEM);
     }
 
     // Step 4: Execute Demucs
@@ -116,12 +158,14 @@ export async function processDemucsJob(job: Job<{ jobId: string }>): Promise<voi
       throw new Error(`Job metadata lost for ${jobId}`);
     }
 
-    await filesystem.appendToJobLog(jobId, `[DEMUCS-WORKER] Processing audio with Demucs`);
+    await filesystem.appendToJobLog(jobId, `[DEMUCS-WORKER] Executing Demucs`);
 
-    // Mock audio path (in real implementation, would be actual downloaded file)
-    const audioPath = `/tmp/ego-studio-jobs/jobs/DONE/${jobId}/artifacts/download/audio.wav`;
+    // Get audio file path from download metadata
+    const audioPath = metadata.download?.filePath || `${jobId}.audio.wav`;
+    const jobDir = path.join(STORAGE_ROOT, jobId);
+    const outputDir = path.join(jobDir, "demucs-output");
 
-    const result = await mockDemucsExecution(audioPath);
+    const result = await executeDemucs(audioPath, outputDir);
 
     if (!result.success) {
       // Step 5a: Fail the job (RUNNING → FAILED)
@@ -138,7 +182,7 @@ export async function processDemucsJob(job: Job<{ jobId: string }>): Promise<voi
         await filesystem.writeMetadata(jobId, updated);
       }
 
-      await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.FAILED as any, Actor.DEMUCS_WORKER);
+      await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.FAILED as any, Actor.SYSTEM);
       return;
     }
 
@@ -149,8 +193,14 @@ export async function processDemucsJob(job: Job<{ jobId: string }>): Promise<voi
     // Write stem artifacts
     if (result.stems) {
       for (const [stemName, stemPath] of Object.entries(result.stems)) {
-        await filesystem.writeArtifact(jobId, "separation", `${stemName}.wav`, `Mock stem: ${stemPath}`);
-        await filesystem.appendToJobLog(jobId, `[DEMUCS-WORKER] Wrote artifact: ${stemName}.wav`);
+        try {
+          const content = await fs.readFile(stemPath);
+          await filesystem.writeArtifact(jobId, "stems", `${stemName}.wav`, content);
+          await filesystem.appendToJobLog(jobId, `[DEMUCS-WORKER] Wrote artifact: ${stemName}.wav`);
+        } catch (artifactError) {
+          console.error(`[demucs-worker] Failed to write artifact ${stemName}:`, artifactError);
+          await filesystem.appendToJobLog(jobId, `[DEMUCS-WORKER] Warning: Failed to write artifact ${stemName}`);
+        }
       }
     }
 
@@ -159,11 +209,13 @@ export async function processDemucsJob(job: Job<{ jobId: string }>): Promise<voi
     if (updated) {
       updated.separation = {
         status: "COMPLETE",
+        model: "htdemucs",
+        device: "cpu", // or detect from environment
       };
       await filesystem.writeMetadata(jobId, updated);
     }
 
-    await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.DONE as any, Actor.DEMUCS_WORKER);
+    await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.DONE as any, Actor.SYSTEM);
 
     console.log(`[demucs-worker] Job ${jobId} finished successfully`);
   } catch (error) {
@@ -180,7 +232,7 @@ export async function processDemucsJob(job: Job<{ jobId: string }>): Promise<voi
     try {
       const metadata = await filesystem.readMetadata(jobId);
       if (metadata && metadata.state === JOB_STATES.RUNNING) {
-        await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.FAILED as any, Actor.DEMUCS_WORKER);
+        await moves.moveJob(jobId, JOB_STATES.RUNNING as any, JOB_STATES.FAILED as any, Actor.SYSTEM);
       }
     } catch (failError) {
       console.error(`[demucs-worker] Failed to mark job as failed:`, failError);

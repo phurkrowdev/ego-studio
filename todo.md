@@ -111,3 +111,15 @@
 - [x] Add inline retry button for FAILED jobs
 - [x] Verify all 98 tests passing
 - [x] Verify UI reflects live job state updates via polling
+
+
+## Phase 6: Real Demucs, Audacity Worker, Real Lyrics API
+
+- [x] Replace mock Demucs with real execFile() implementation
+- [x] Map Demucs errors to failure reasons (GPU_MEMORY, INVALID_AUDIO_FORMAT, TIMEOUT)
+- [x] Create Audacity worker for final stage (project generation)
+- [x] Integrate Audacity into Bull queue
+- [x] Wire auto-enqueue: Demucs → Lyrics → Audacity
+- [x] Add comprehensive logging for all 4 stages
+- [x] Verify all 98 tests passing
+- [x] Full 4-stage pipeline operational: yt-dlp → Demucs → Lyrics → Audacity
