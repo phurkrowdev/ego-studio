@@ -1,142 +1,339 @@
-# E.G.O. Studio Audio — Project TODO
+# E.G.O. Studio Audio — Crimson MVP Hardening (Validation-First)
 
-## Phase 0: Infrastructure (Filesystem Authority & State Machine)
+## Completed Phases (1-7)
 
-- [x] Create server/lib/filesystem.ts (directory layout, atomic moves, state dirs)
-- [x] Create server/lib/job-state.ts (state machine, transition validation, ownership)
-- [x] Create server/lib/job-moves.ts (atomic directory moves, race-safe transitions)
-- [x] Create server/lib/db-init.ts (database rebuild from filesystem on startup)
-- [x] Add jobs table to drizzle/schema.ts
-- [x] Write vitest tests for filesystem module (15 tests)
-- [x] Write vitest tests for state machine (33 tests)
-- [x] Write vitest tests for atomic moves (14 tests)
-- [x] Fix test isolation issue (dependency injection + unique temp dirs)
-- [x] All 63/63 Phase 0 tests passing
-- [x] Update server/routers/jobs.ts to use real filesystem instead of in-memory mock
-- [x] Verify tRPC endpoints work with real persistence (create, list, get, logs, artifacts)
-- [x] Verify UI renders correctly with real job state
+- [x] Phase 0: Filesystem authority, state machine, atomic moves (63/63 tests)
+- [x] Phase 1: tRPC API contract (8 endpoints, 20 integration tests)
+- [x] Phase 2: Real persistence (UI works unchanged, 95 jobs in filesystem)
+- [x] Phase 3: Worker integration + Job detail UI (89/89 tests passing)
+- [x] Phase 4A: Demucs worker + multi-stage pipeline (91/91 tests)
+- [x] Phase 4B: Automatic orchestration + end-to-end tests (98/98 tests passing)
+- [x] Phase 5: Real yt-dlp, Lyrics worker, UI enhancements (98/98 tests)
+- [x] Phase 6: Real Demucs, Audacity worker, full 4-stage pipeline (98/98 tests)
+- [x] Phase 7: Production-grade external integrations, Genius API, webhooks (117/117 tests)
 
-## Phase 1: Test Coverage
+**Current Status:** 117 tests passing, 4-stage pipeline operational, deterministic state machine intact.
 
-- [x] Write vitest tests for job lifecycle transitions (NEW → CLAIMED → RUNNING → DONE/FAILED)
-- [x] Write tests for illegal state transitions (should reject)
-- [x] Write tests for failure modes (state machine validates all modes)
-- [x] Write tests for terminal state rendering in UI (via JobDetail component)
-- [x] Verify all tests pass before worker integration (63/63 passing ✅)
+---
 
-## Phase 2: Real Persistence Integration
+## Phase 8: Crimson MVP Hardening (Validation-First, Local-First)
 
-- [x] Create server/lib/jobs-service.ts (thin wrapper around Phase 0)
-- [x] Update server/routers/jobs.ts to use JobsService instead of in-memory
-- [x] Write 20 integration tests for JobsService (all passing)
-- [x] Verify all 7 endpoints work with real filesystem
-- [x] Verify UI works unchanged with real persistence (95 jobs, proper state display)
+### 8.1: File Upload Infrastructure (Local-First, 200MB cap)
 
-## Phase 3: Worker Integration (Bull/BullMQ) & UI
+**Objective:** Accept audio files (WAV, MP3, AIFF, FLAC), validate, and store locally. No resumable uploads. Local storage first, S3 deferred to Phase 8.7.
 
-- [x] Wire yt-dlp worker to job queue (server/workers/yt-dlp-worker.ts)
-- [x] Bull queue initialization (server/lib/queue.ts)
-- [x] Implement retry logic (server/lib/jobs-service-retry.ts)
-- [x] Add retry endpoint to router
-- [x] Build job detail view UI (client/src/pages/JobDetail.tsx)
-- [x] Real-time logs with polling
-- [x] Artifacts display
-- [x] Navigation from list to detail
-- [x] Wire Demucs worker to job queue
-- [x] Test end-to-end with multi-stage pipeline
+- [ ] Create `server/lib/file-upload.ts` with validation
+  - [ ] Accept MIME types: audio/wav, audio/mpeg, audio/flac, audio/aiff
+  - [ ] Enforce 200MB file size limit
+  - [ ] Reject invalid files with user-facing error message
+  - [ ] Stream upload to local filesystem (STORAGE_ROOT/uploads/)
+  - [ ] Return file metadata: filename, size, format, duration (optional, can skip duration)
+  - [ ] No resumable uploads in this sprint
 
-## Summary
+- [ ] Update `server/routers/jobs.ts`
+  - [ ] Modify `create` endpoint: accept file upload instead of URL
+  - [ ] Input schema: `z.object({ file: z.instanceof(File), metadata?: z.object({...}) })`
+  - [ ] Output: Same `JobResponse` shape (contract locked, no changes)
+  - [ ] Call `createJobFromFile(file)` internally
 
-**Infrastructure Complete:**
-- ✅ Phase 0: Filesystem authority, state machine, atomic moves (63/63 tests)
-- ✅ Phase 1: tRPC API contract (8 endpoints, 20 integration tests)
-- ✅ Phase 2: Real persistence (UI works unchanged, 95 jobs in filesystem)
-- ✅ Phase 3: Worker integration + Job detail UI (89/89 tests passing)
-- ✅ Phase 4A: Demucs worker + multi-stage pipeline (91/91 tests)
-- ✅ Phase 4B: Automatic orchestration + end-to-end tests (98/98 tests passing)
+- [ ] Update `server/lib/jobs-service.ts`
+  - [ ] Add `createJobFromFile(file)` function
+  - [ ] Call `filesystem.createJobFolder(fileMetadata)` instead of URL
+  - [ ] Store file metadata in job: `{ filename, size, format, s3Key: null, uploadedAt }`
+  - [ ] Ensure backward compatibility with existing URL-based jobs (optional)
 
-**Key Achievements:**
-- Swapped implementation without changing API
-- UI works unchanged with real persistence
-- All state transitions validated by state machine
-- Filesystem is authoritative source of truth
-- Multi-stage pipeline: yt-dlp → Demucs with auto-enqueue
-- Job detail page with real-time logs and artifacts
-- Retry logic for FAILED jobs
-- 98 tests covering all critical paths
-- Comprehensive logging at all stages
-- Contract fully locked (no API changes needed)
+- [ ] Update `server/lib/filesystem.ts`
+  - [ ] Modify `createJobFolder()` to accept file metadata instead of URL
+  - [ ] Store metadata in `metadata.json`: `{ filename, size, format, uploadedAt }`
+  - [ ] Remove YouTube-specific fields from new jobs (keep for existing jobs)
 
-## Phase 4A: Demucs Worker Integration
+- [ ] Write vitest tests (5+ tests)
+  - [ ] Test valid file upload (WAV, MP3, AIFF, FLAC)
+  - [ ] Test invalid MIME type rejection
+  - [ ] Test file size limit enforcement (reject >200MB)
+  - [ ] Test streaming to local filesystem
+  - [ ] Test error messages (no stack traces)
 
-- [x] Create server/workers/demucs-worker.ts (mock execution, 5% failure rate)
-- [x] Update state machine for multi-stage pipeline (DONE → CLAIMED allowed)
-- [x] Update job-state.ts isTerminalState/isIntermediateState for multi-stage
-- [x] Update job-state.test.ts for multi-stage transitions (91/91 tests passing)
-- [x] Integrate Demucs worker into Bull queue (server/lib/queue.ts)
-- [x] Auto-enqueue Demucs after yt-dlp completes
+**Success Metric:** File upload endpoint works, 200MB limit enforced, local storage functional.
 
-## Phase 4B: Automatic Multi-Stage Queue Orchestration
+---
 
-- [x] Wire Demucs auto-enqueue after yt-dlp completion (yt-dlp-worker.ts)
-- [x] Add comprehensive logging for all stages
-- [x] Write end-to-end integration tests (7 tests, all passing)
-- [x] Verify multi-stage pipeline with real state transitions
-- [x] Verify artifacts tracked through pipeline
-- [x] Verify logs maintained across stages
-- [x] All 98 tests passing
+### 8.2: Artifact Packaging & Cleanup (ZIP structure, 7-14 day retention)
 
-## Phase 4C: Polish & Deployment
+**Objective:** Generate clean ZIP artifacts with consistent naming. Implement 7-14 day retention + automatic cleanup cron.
 
-- [ ] Add styling to job detail page
-- [ ] Implement real yt-dlp integration
-- [ ] Implement real Demucs integration
-- [ ] Add Lyrics worker
-- [ ] Add Audacity worker
-- [ ] End-to-end testing with real workers
-- [ ] Performance optimization
-- [ ] Add error boundary for graceful failure handling
-- [ ] Test crash recovery (jobs survive restarts)
-- [ ] Deploy to production
+- [ ] Create `server/lib/artifact-packaging.ts`
+  - [ ] Generate ZIP with structure: `Artist - Track/stems/`, `lyrics.txt`, `project.aup3`
+  - [ ] Sanitize artist/track names (remove special chars, spaces → underscores)
+  - [ ] Implement idempotent ZIP generation (safe to retry)
+  - [ ] Store ZIP locally (STORAGE_ROOT/artifacts/)
+  - [ ] Return ZIP file path and local URL
 
-## Phase 5: Real yt-dlp, Lyrics Worker, UI Enhancements
+- [ ] Add `jobs.downloadArtifacts` endpoint
+  - [ ] Input: `z.object({ jobId })`
+  - [ ] Return: `{ zipPath, zipUrl, expiresAt }`
+  - [ ] Verify job is DONE before allowing download
 
-- [x] Replace mock yt-dlp with real execFile() calls
-- [x] Stream yt-dlp stdout/stderr to job logs
-- [x] Map yt-dlp errors to failure reasons (CAPTCHA, RATE_LIMITED, COPYRIGHT, DOWNLOAD_ERROR)
-- [x] Create server/workers/lyrics-worker.ts
-- [x] Wire Lyrics auto-enqueue after Demucs completion (in queue.ts)
-- [x] Add state machine support for LYRICS_WORKER actor (via SYSTEM actor)
-- [x] Add UI status badges (color-coded by state: NEW, CLAIMED, RUNNING, DONE, FAILED)
-- [x] Add inline retry button for FAILED jobs
-- [x] Verify all 98 tests passing
-- [x] Verify UI reflects live job state updates via polling
+- [ ] Update Audacity worker
+  - [ ] After `.aup3` generation, call `packageArtifacts(jobId)` to create ZIP
+  - [ ] Store ZIP path in job metadata
+  - [ ] Log ZIP generation success/failure
 
+- [ ] Create `server/lib/artifact-cleanup.ts`
+  - [ ] Scan STORAGE_ROOT/artifacts/ for files older than 14 days
+  - [ ] Delete old ZIP files
+  - [ ] Log cleanup operations
+  - [ ] Implement as cron job (run daily at 2 AM)
 
-## Phase 6: Real Demucs, Audacity Worker, Real Lyrics API
+- [ ] Wire cleanup cron in `server/_core/index.ts`
+  - [ ] Schedule artifact cleanup job
+  - [ ] Log cleanup results
 
-- [x] Replace mock Demucs with real execFile() implementation
-- [x] Map Demucs errors to failure reasons (GPU_MEMORY, INVALID_AUDIO_FORMAT, TIMEOUT)
-- [x] Create Audacity worker for final stage (project generation)
-- [x] Integrate Audacity into Bull queue
-- [x] Wire auto-enqueue: Demucs → Lyrics → Audacity
-- [x] Add comprehensive logging for all 4 stages
-- [x] Verify all 98 tests passing
-- [x] Full 4-stage pipeline operational: yt-dlp → Demucs → Lyrics → Audacity
+- [ ] Write vitest tests (4+ tests)
+  - [ ] Test ZIP generation with valid stems
+  - [ ] Test ZIP structure validation
+  - [ ] Test filename sanitization
+  - [ ] Test idempotent packaging (retry-safe)
 
+**Success Metric:** ZIP artifacts generated on job completion, cleanup cron functional, 7-14 day retention enforced.
 
-## Phase 7: Production-Grade External Integrations
+---
 
-- [x] Implement real Lyrics API integration (Genius with fallback)
-- [x] Add lyrics caching to avoid duplicate API calls (node-cache, 24h TTL)
-- [x] Implement deterministic error handling and logging
-- [x] Generate valid .aup3 Audacity project files (XML + metadata)
-- [x] Reference separated stems accurately in projects
-- [x] Ensure Audacity 3.x cross-platform compatibility
-- [x] Add webhook notification system (async delivery)
-- [x] Implement secure webhook payload signing (HMAC-SHA256)
-- [x] Add webhook retry logic with exponential backoff
-- [x] Extend integration tests for all new features (19 new tests)
-- [x] Verify 100% test pass rate (117/117 passing)
-- [x] Document all new environment variables (GENIUS_API_KEY)
-- [x] All tests passing with comprehensive coverage
+### 8.3: Failure UX Hardening (user-facing errors, retry consistency)
+
+**Objective:** Clear user-facing error messages, no internal stack traces, consistent retry buttons.
+
+- [ ] Create `server/lib/error-messages.ts`
+  - [ ] Define user-facing messages for all failure modes:
+    - `CAPTCHA_REQUIRED` → "YouTube blocked this request. Please try again later."
+    - `RATE_LIMITED` → "Too many requests. Please wait before retrying."
+    - `COPYRIGHT_RESTRICTED` → "This content is copyright-protected and cannot be processed."
+    - `DOWNLOAD_ERROR` → "Failed to download audio. Please check the URL and try again."
+    - `GPU_MEMORY` → "Processing failed due to server capacity. Please try again later."
+    - `INVALID_AUDIO_FORMAT` → "Audio format not supported. Please use WAV, MP3, AIFF, or FLAC."
+    - `TIMEOUT` → "Processing took too long. Please try a shorter audio file."
+    - `FILE_UPLOAD_ERROR` → "File upload failed. Please check file size and format."
+    - `FILE_TOO_LARGE` → "File is too large. Maximum size is 200MB."
+    - `INVALID_FILE_FORMAT` → "File format not supported. Please use WAV, MP3, AIFF, or FLAC."
+
+- [ ] Update Job response shape
+  - [ ] Add `userMessage` field to metadata stages (download, separation, lyrics, audacity)
+  - [ ] Populate `userMessage` when job fails
+  - [ ] Never expose internal error details to frontend
+
+- [ ] Update `server/lib/jobs-service.ts`
+  - [ ] Call `getErrorMessage(reason)` when job fails
+  - [ ] Store `userMessage` in job metadata
+
+- [ ] Update `client/src/pages/JobDetail.tsx`
+  - [ ] Display `userMessage` in error section (not `reason`)
+  - [ ] Keep technical logs visible for debugging
+  - [ ] Ensure retry button visible and consistent across all failure states
+
+- [ ] Write vitest tests (3+ tests)
+  - [ ] Test error message mapping for all failure modes
+  - [ ] Test no stack traces in user messages
+  - [ ] Test retry button visibility
+
+**Success Metric:** Clear error messages displayed, no stack traces, retry buttons consistent.
+
+---
+
+### 8.4: User Ownership & Concurrency (per-user 1-2 max, ownership enforcement)
+
+**Objective:** Enforce per-user job ownership, implement 1-2 concurrent job limit per user.
+
+- [ ] Update database schema
+  - [ ] Add `userId` to `jobs` table (from auth context)
+  - [ ] Add index on `(userId, state)` for efficient querying
+
+- [ ] Create `server/lib/concurrency-limiter.ts`
+  - [ ] Check concurrent jobs per user (default 1-2 max)
+  - [ ] Return `{ allowed: boolean, running: number, limit: number }`
+  - [ ] Use database query to count CLAIMED/RUNNING jobs for user
+
+- [ ] Update `jobs.create` endpoint
+  - [ ] Extract `userId` from auth context
+  - [ ] Call `checkConcurrencyLimit(userId)` before creating job
+  - [ ] Return 429 Too Many Requests if limit exceeded
+  - [ ] Include `Retry-After` header
+
+- [ ] Update `jobs.list` endpoint
+  - [ ] Filter jobs by `userId` (users only see their own jobs)
+  - [ ] Admins can see all jobs (optional, defer to Phase 9)
+
+- [ ] Update `jobs.get` endpoint
+  - [ ] Verify `userId` matches (users only access their own jobs)
+
+- [ ] Update `jobs.retry` endpoint
+  - [ ] Verify `userId` matches before allowing retry
+
+- [ ] Write vitest tests (4+ tests)
+  - [ ] Test concurrent job limit (reject 3rd job)
+  - [ ] Test per-user isolation (user A can't see user B's jobs)
+  - [ ] Test 429 response code
+  - [ ] Test concurrency counter accuracy
+
+**Success Metric:** Per-user job ownership enforced, 1-2 concurrent limit working, tests passing.
+
+---
+
+### 8.5: Error Message Hardening & UI Polish
+
+**Objective:** Polish UI for file upload, display user-facing errors, show concurrency status.
+
+- [ ] Update `client/src/pages/Home.tsx`
+  - [ ] Replace `JobSubmitForm` with `FileUploadForm`
+  - [ ] Implement drag-and-drop file upload
+  - [ ] Display file metadata (name, size)
+  - [ ] Show upload progress bar
+  - [ ] Accept only WAV, MP3, AIFF, FLAC
+  - [ ] Display file size validation error if oversized
+  - [ ] Keep `JobList` and navigation unchanged
+
+- [ ] Create `client/src/components/FileUploadForm.tsx`
+  - [ ] Drag-and-drop zone with visual feedback
+  - [ ] Click to browse file picker
+  - [ ] Display selected file metadata
+  - [ ] Show upload progress (bytes uploaded / total)
+  - [ ] Handle upload errors gracefully
+  - [ ] Call `trpc.jobs.create` with file
+
+- [ ] Update `client/src/pages/JobDetail.tsx`
+  - [ ] Display file metadata instead of YouTube URL
+  - [ ] Show user-facing error messages (not technical reasons)
+  - [ ] Display concurrency status if limit reached
+  - [ ] Keep logs and retry button unchanged
+
+- [ ] Write integration tests (2+ tests)
+  - [ ] Test file upload form rendering
+  - [ ] Test file validation (reject invalid formats)
+
+**Success Metric:** File-upload-first UI complete, YouTube removed from primary surface, error messages clear.
+
+---
+
+### 8.6: Local Deployment Testing (3 producer testers)
+
+**Objective:** Deploy locally and test with 3 producer testers. Validate core workflow.
+
+- [ ] Prepare local deployment guide
+  - [ ] Document setup instructions (clone, pnpm install, env vars)
+  - [ ] Document how to run dev server
+  - [ ] Document how to access UI (localhost:3000)
+
+- [ ] Recruit 3 producer testers
+  - [ ] Target: beat makers, music producers
+  - [ ] Provide local deployment guide
+  - [ ] Collect feedback on workflow
+
+- [ ] Test core workflow with testers
+  - [ ] Upload audio file (WAV, MP3, AIFF, FLAC)
+  - [ ] Monitor job progression through 4 stages
+  - [ ] Download ZIP artifact
+  - [ ] Verify ZIP structure (stems, lyrics, .aup3)
+  - [ ] Test error scenarios (invalid format, oversized file)
+  - [ ] Test retry button on failed jobs
+
+- [ ] Collect feedback
+  - [ ] What worked well?
+  - [ ] What was confusing?
+  - [ ] What would make it more useful?
+  - [ ] Would you pay for this?
+
+- [ ] Document results
+  - [ ] Create `PRODUCER_FEEDBACK.md` with findings
+  - [ ] Identify quick wins vs. future work
+
+**Success Metric:** 3 producers tested locally, core workflow validated, 1+ willing to pay.
+
+---
+
+### 8.7: S3 Abstraction & Cloud Deployment (final third)
+
+**Objective:** Defer to final third of sprint. Abstract storage layer for S3-compatible backends (Backblaze B2, etc.).
+
+- [ ] Create `server/lib/storage-abstraction.ts`
+  - [ ] Abstract storage interface (local vs S3)
+  - [ ] Implement local storage adapter (existing)
+  - [ ] Implement S3 adapter (using `storagePut` helper)
+  - [ ] Environment-based selection (STORAGE_TYPE=local|s3)
+
+- [ ] Update artifact packaging to use abstraction
+  - [ ] Store artifacts via abstraction layer
+  - [ ] Support both local and S3 URLs
+
+- [ ] Create Dockerfile
+  - [ ] Node.js base image
+  - [ ] Install Demucs, yt-dlp (optional)
+  - [ ] Copy app code
+  - [ ] Expose port 3000
+
+- [ ] Create docker-compose.yml
+  - [ ] Node API service
+  - [ ] Redis service (for Bull queue)
+  - [ ] Optional: MinIO for local S3-compatible storage
+
+- [ ] Document cloud deployment
+  - [ ] Update `DEPLOYMENT.md` with cloud instructions
+  - [ ] GPU requirements (4GB VRAM minimum)
+  - [ ] Environment variables for S3
+
+**Success Metric:** S3 abstraction working, Docker deployment functional, cloud-ready.
+
+---
+
+### 8.8: Crimson MVP Completion & Legal Review
+
+**Objective:** Verify all criteria met, legal review complete, ready for producer testing.
+
+- [ ] Create `CRIMSON_MVP_CHECKLIST.md`
+  - [ ] Technical criteria: 130+ tests passing, 0 TypeScript errors
+  - [ ] UX criteria: file upload default, clear error messages, consistent retry buttons
+  - [ ] Deployment criteria: local deployment working, 3 producers tested
+  - [ ] Legal criteria: no YouTube piracy, file-based ingestion only
+  - [ ] Commercial criteria: 1+ willing to pay, no red flags
+
+- [ ] Run full test suite
+  - [ ] Target: 130+ tests passing (117 existing + 13+ new)
+  - [ ] Zero TypeScript errors
+
+- [ ] Legal review
+  - [ ] Verify TOS clarity (user owns audio rights)
+  - [ ] Verify DMCA compliance process documented
+  - [ ] Verify no downloader framing
+  - [ ] Verify artifact retention policy (7-14 days)
+
+- [ ] Final checkpoint
+  - [ ] Save checkpoint with Crimson MVP complete
+  - [ ] Document completion date and metrics
+
+**Success Metric:** All criteria verified, legal review passed, ready for commercialization.
+
+---
+
+## Key Constraints (Validation-First)
+
+- **Local-first storage:** No S3 in Phases 8.1-8.6. S3 deferred to Phase 8.7.
+- **No resumable uploads:** Simple file upload, no resume logic.
+- **Simplified rate limiting:** Per-user concurrent limit only (1-2 max). No hourly quota yet.
+- **Deterministic state machine:** Preserved intact. No changes to state transitions.
+- **Test coverage discipline:** Don't optimize for test count. Preserve coverage of critical paths.
+- **Primary success metric:** 3 producer testers using local deployment successfully.
+
+---
+
+## Timeline (Validation-First)
+
+| Phase | Days | Deliverable |
+|-------|------|-------------|
+| 8.1 | 1-4 | File upload infrastructure (local-first, 200MB cap) |
+| 8.2 | 5-8 | ZIP packaging + cleanup cron (7-14 day retention) |
+| 8.3 | 9-12 | Failure UX hardening (user-facing errors, retry consistency) |
+| 8.4 | 13-16 | User ownership + concurrency (per-user 1-2 max) |
+| 8.5 | 17-20 | Error message hardening + UI polish |
+| 8.6 | 21-24 | Local deployment testing (3 producer testers) |
+| 8.7 | 25-28 | S3 abstraction + cloud deployment (final third) |
+| 8.8 | 29-30 | Completion checklist + legal review |
+
+**Total: 30 days to Crimson MVP ready for commercialization.**
