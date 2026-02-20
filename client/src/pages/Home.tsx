@@ -1,66 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { FileUploadForm } from "@/components/FileUploadForm";
 import { trpc } from "@/lib/trpc";
-
-/**
- * JobSubmitForm — Submit a YouTube URL to create a job
- */
-function JobSubmitForm() {
-  const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const createJobMutation = trpc.jobs.create.useMutation({
-    onSuccess: (result: any) => {
-      console.log("Job created:", result);
-      setUrl("");
-      setError(null);
-    },
-    onError: (err: any) => {
-      console.error("Job creation failed:", err);
-      setError(err.message);
-    },
-  });
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url.trim()) {
-      setError("URL is required");
-      return;
-    }
-    setLoading(true);
-    try {
-      await createJobMutation.mutateAsync({ url: url.trim() });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div style={{ marginBottom: "2rem", padding: "1rem", border: "1px solid #ccc" }}>
-      <h2>Submit YouTube URL</h2>
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: "0.5rem" }}>
-          <label>
-            YouTube URL:
-            <input
-              type="text"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
-              style={{ marginLeft: "0.5rem", width: "400px" }}
-              disabled={loading}
-            />
-          </label>
-        </div>
-        <button type="submit" disabled={loading}>
-          {loading ? "Creating..." : "Create Job"}
-        </button>
-        {error && <div style={{ color: "red", marginTop: "0.5rem" }}>{error}</div>}
-      </form>
-    </div>
-  );
-}
 
 /**
  * StateBadge — Color-coded badge for job state
@@ -125,14 +66,14 @@ function JobList() {
     <div style={{ padding: "1rem", border: "1px solid #ccc" }}>
       <h2>Jobs ({jobsList?.length || 0})</h2>
       {!jobsList || jobsList.length === 0 ? (
-        <p>No jobs yet.</p>
+        <p>No jobs yet. Upload an audio file to get started.</p>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #ccc" }}>
               <th style={{ textAlign: "left", padding: "0.5rem" }}>Job ID</th>
               <th style={{ textAlign: "left", padding: "0.5rem" }}>State</th>
-              <th style={{ textAlign: "left", padding: "0.5rem" }}>URL</th>
+              <th style={{ textAlign: "left", padding: "0.5rem" }}>File</th>
               <th style={{ textAlign: "left", padding: "0.5rem" }}>Status</th>
             </tr>
           </thead>
@@ -150,13 +91,9 @@ function JobList() {
                   <StateBadge state={job.state} />
                 </td>
                 <td style={{ padding: "0.5rem", fontSize: "0.85rem" }}>
-                  {job.metadata?.youtube_url ? (
-                    <a href={job.metadata.youtube_url} target="_blank" rel="noopener noreferrer">
-                      {job.metadata.youtube_url.substring(0, 50)}...
-                    </a>
-                  ) : (
-                    "N/A"
-                  )}
+                  {job.metadata?.youtubeUrl && job.metadata.youtubeUrl !== "N/A"
+                    ? job.metadata.youtubeUrl.substring(0, 50)
+                    : "Uploaded file"}
                 </td>
                 <td style={{ padding: "0.5rem" }}>
                   {job.state === "DONE" && <span style={{ color: "green" }}>✓ Complete</span>}
@@ -203,14 +140,16 @@ function JobList() {
 }
 
 /**
- * Home — Main page with job submission and listing
+ * Home — Main page with file upload and job listing
  */
 export default function Home() {
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "2rem" }}>
-      <h1>E.G.O. Studio Audio — RIF Ingestion</h1>
-      <p>Reusable Ingestion Framework for audio processing</p>
-      <JobSubmitForm />
+      <h1>E.G.O. Studio Audio</h1>
+      <p style={{ fontSize: "1.1rem", color: "#666", marginBottom: "2rem" }}>
+        Upload your audio. Get studio-ready stems + session files.
+      </p>
+      <FileUploadForm />
       <JobList />
     </div>
   );
