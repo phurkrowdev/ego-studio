@@ -55,6 +55,13 @@ export interface JobResponse {
     audacity?: {
       status: string;
     };
+    file?: {
+      filename: string;
+      uploadedFilename: string;
+      size: number;
+      mimeType: string;
+      uploadedAt: string;
+    };
   };
   createdAt: Date;
   updatedAt: Date;
@@ -317,6 +324,7 @@ function jobToResponse(jobId: string, metadata: any): JobResponse {
       separation: metadata.separation,
       lyrics: metadata.lyrics,
       audacity: metadata.audacity,
+      file: metadata.file,
     },
     createdAt: new Date(metadata.createdAt),
     updatedAt: new Date(metadata.updatedAt),

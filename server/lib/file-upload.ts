@@ -14,12 +14,13 @@ import { nanoid } from "nanoid";
 
 /**
  * Supported audio formats and their MIME types
+ * Multiple MIME types per format to handle browser variations
  */
 export const SUPPORTED_FORMATS = {
-  wav: "audio/wav",
-  mp3: "audio/mpeg",
-  flac: "audio/flac",
-  aiff: "audio/aiff",
+  wav: ["audio/wav", "audio/x-wav", "audio/vnd.wave"],
+  mp3: ["audio/mpeg", "audio/mp3", "audio/x-mpeg", "audio/x-mp3"],
+  flac: ["audio/flac", "audio/x-flac"],
+  aiff: ["audio/aiff", "audio/x-aiff"],
 } as const;
 
 export type AudioFormat = keyof typeof SUPPORTED_FORMATS;
@@ -29,7 +30,8 @@ export type AudioFormat = keyof typeof SUPPORTED_FORMATS;
  */
 export const UPLOAD_CONSTRAINTS = {
   maxFileSize: 200 * 1024 * 1024, // 200MB
-  supportedMimeTypes: Object.values(SUPPORTED_FORMATS),
+  supportedMimeTypes: Object.values(SUPPORTED_FORMATS).flat(),
+  supportedExtensions: ['.wav', '.mp3', '.flac', '.aiff'],
 } as const;
 
 /**
@@ -58,21 +60,34 @@ export class FileUploadError extends Error {
 }
 
 /**
- * Validate file MIME type
+ * Validate file MIME type and fallback to extension
  */
-export function validateMimeType(mimeType: string): AudioFormat {
+export function validateMimeType(mimeType: string, filename?: string): AudioFormat {
+  // First try MIME type matching
   const format = Object.entries(SUPPORTED_FORMATS).find(
-    ([_, mime]) => mime === mimeType
+    ([_, mimes]) => (mimes as readonly string[]).includes(mimeType)
   )?.[0];
 
-  if (!format) {
-    throw new FileUploadError(
-      "INVALID_FILE_FORMAT",
-      `Unsupported file format. Supported formats: WAV, MP3, AIFF, FLAC`
-    );
+  if (format) {
+    return format as AudioFormat;
   }
 
-  return format as AudioFormat;
+  // Fallback to file extension if MIME type not recognized
+  if (filename) {
+    const ext = path.extname(filename).toLowerCase();
+    const extFormat = (Object.keys(SUPPORTED_FORMATS) as AudioFormat[]).find(
+      (key) => ext === `.${key}`
+    );
+
+    if (extFormat) {
+      return extFormat;
+    }
+  }
+
+  throw new FileUploadError(
+    "INVALID_FILE_FORMAT",
+    `Unsupported file format. Supported formats: WAV, MP3, AIFF, FLAC`
+  );
 }
 
 /**
@@ -97,6 +112,13 @@ export function validateFileSize(size: number): void {
 /**
  * Sanitize filename for storage
  */
+/**
+ * Extract file extension
+ */
+function getFileExtension(filename: string): string {
+  return path.extname(filename).toLowerCase();
+}
+
 export function sanitizeFilename(filename: string): string {
   // Remove path separators and special characters
   return filename

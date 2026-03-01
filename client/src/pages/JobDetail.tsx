@@ -47,6 +47,8 @@ export function JobDetail() {
     },
   });
 
+
+
   if (!jobId) {
     return (
       <div className="p-6">
@@ -221,42 +223,17 @@ export function JobDetail() {
       )}
 
       {/* Actions */}
-      <Card className="p-6">
-        <h2 className="text-lg font-bold mb-4">Actions</h2>
-        <div className="flex gap-2">
-          {job.state === "FAILED" && (
-            <Button
-              onClick={() => retryMutation.mutate({ jobId: job.jobId })}
-              disabled={retryMutation.isPending}
-            >
-              {retryMutation.isPending ? "Retrying..." : "Retry Job"}
-            </Button>
-          )}
-          {job.state === "NEW" && (
-            <Button
-              onClick={() =>
-                trpc.jobs.simulateProgress.useMutation().mutate({ jobId: job.jobId })
-              }
-              variant="outline"
-            >
-              Simulate Progress (Testing)
-            </Button>
-          )}
-          {job.state === "FAILED" && (
-            <Button
-              onClick={() =>
-                trpc.jobs.simulateFailure.useMutation().mutate({
-                  jobId: job.jobId,
-                  reason: "DOWNLOAD_ERROR",
-                })
-              }
-              variant="outline"
-            >
-              Simulate Failure (Testing)
-            </Button>
-          )}
-        </div>
-      </Card>
+      {job.state === "FAILED" && (
+        <Card className="p-6">
+          <h2 className="text-lg font-bold mb-4">Actions</h2>
+          <Button
+            onClick={() => retryMutation.mutate({ jobId: job.jobId })}
+            disabled={retryMutation.isPending}
+          >
+            {retryMutation.isPending ? "Retrying..." : "Retry Job"}
+          </Button>
+        </Card>
+      )}
     </div>
   );
 }

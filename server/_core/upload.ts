@@ -133,8 +133,13 @@ async function handleFileUpload(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Validate MIME type
-    if (!UPLOAD_CONSTRAINTS.supportedMimeTypes.includes(mimeType)) {
+    // Validate MIME type (with fallback to file extension)
+    console.log(`[Upload] Received file: ${filename}, MIME type: ${mimeType}`);
+    try {
+      const { validateMimeType } = await import("../lib/file-upload");
+      validateMimeType(mimeType, filename as string);
+    } catch (err) {
+      console.error(`[Upload] MIME type validation failed for ${filename} (${mimeType}):`, err);
       res.status(415).json({
         error: `Unsupported file format. Supported formats: WAV, MP3, AIFF, FLAC.`,
       });
@@ -142,17 +147,23 @@ async function handleFileUpload(req: Request, res: Response): Promise<void> {
     }
 
     // Create job from file
+    console.log(`[Upload] Creating job for ${filename}`);
     const jobResponse = await createJobFromFile(
       fileBuffer as Buffer,
       filename as string,
       mimeType as string
     );
+    console.log(`[Upload] Job created: ${jobResponse.jobId}`);
 
     console.log(
       `[Upload] Successfully created job ${jobResponse.jobId} for file ${filename}`
     );
 
+    // Auto-enqueue job to demucs_queue (job worker will pick it up)
+    console.log(`[Upload] Job ${jobResponse.jobId} is ready for processing (NEW state)`);
+
     // Return job response
+    console.log(`[Upload] Returning success response for job ${jobResponse.jobId}`);
     res.status(201).json({
       jobId: jobResponse.jobId,
       metadata: jobResponse.metadata,

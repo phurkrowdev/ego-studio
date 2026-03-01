@@ -22,37 +22,37 @@
 
 **Objective:** Accept audio files (WAV, MP3, AIFF, FLAC), validate, and store locally. No resumable uploads. Local storage first, S3 deferred to Phase 8.7.
 
-- [ ] Create `server/lib/file-upload.ts` with validation
-  - [ ] Accept MIME types: audio/wav, audio/mpeg, audio/flac, audio/aiff
-  - [ ] Enforce 200MB file size limit
-  - [ ] Reject invalid files with user-facing error message
-  - [ ] Stream upload to local filesystem (STORAGE_ROOT/uploads/)
-  - [ ] Return file metadata: filename, size, format, duration (optional, can skip duration)
-  - [ ] No resumable uploads in this sprint
+- [x] Create `server/lib/file-upload.ts` with validation
+  - [x] Accept MIME types: audio/wav, audio/mpeg, audio/flac, audio/aiff
+  - [x] Enforce 200MB file size limit
+  - [x] Reject invalid files with user-facing error message
+  - [x] Stream upload to local filesystem (STORAGE_ROOT/uploads/)
+  - [x] Return file metadata: filename, size, format, duration (optional, can skip duration)
+  - [x] No resumable uploads in this sprint
 
-- [ ] Update `server/routers/jobs.ts`
-  - [ ] Modify `create` endpoint: accept file upload instead of URL
-  - [ ] Input schema: `z.object({ file: z.instanceof(File), metadata?: z.object({...}) })`
-  - [ ] Output: Same `JobResponse` shape (contract locked, no changes)
-  - [ ] Call `createJobFromFile(file)` internally
+- [x] Update `server/routers/jobs.ts`
+  - [x] Modify `create` endpoint: accept file upload instead of URL
+  - [x] Input schema: `z.object({ file: z.instanceof(File), metadata?: z.object({...}) })`
+  - [x] Output: Same `JobResponse` shape (contract locked, no changes)
+  - [x] Call `createJobFromFile(file)` internally
 
-- [ ] Update `server/lib/jobs-service.ts`
-  - [ ] Add `createJobFromFile(file)` function
-  - [ ] Call `filesystem.createJobFolder(fileMetadata)` instead of URL
-  - [ ] Store file metadata in job: `{ filename, size, format, s3Key: null, uploadedAt }`
-  - [ ] Ensure backward compatibility with existing URL-based jobs (optional)
+- [x] Update `server/lib/jobs-service.ts`
+  - [x] Add `createJobFromFile(file)` function
+  - [x] Call `filesystem.createJobFolder(fileMetadata)` instead of URL
+  - [x] Store file metadata in job: `{ filename, size, format, s3Key: null, uploadedAt }`
+  - [x] Ensure backward compatibility with existing URL-based jobs (optional)
 
-- [ ] Update `server/lib/filesystem.ts`
-  - [ ] Modify `createJobFolder()` to accept file metadata instead of URL
-  - [ ] Store metadata in `metadata.json`: `{ filename, size, format, uploadedAt }`
-  - [ ] Remove YouTube-specific fields from new jobs (keep for existing jobs)
+- [x] Update `server/lib/filesystem.ts`
+  - [x] Modify `createJobFolder()` to accept file metadata instead of URL
+  - [x] Store metadata in `metadata.json`: `{ filename, size, format, uploadedAt }`
+  - [x] Remove YouTube-specific fields from new jobs (keep for existing jobs)
 
-- [ ] Write vitest tests (5+ tests)
-  - [ ] Test valid file upload (WAV, MP3, AIFF, FLAC)
-  - [ ] Test invalid MIME type rejection
-  - [ ] Test file size limit enforcement (reject >200MB)
-  - [ ] Test streaming to local filesystem
-  - [ ] Test error messages (no stack traces)
+- [x] Write vitest tests (5+ tests)
+  - [x] Test valid file upload (WAV, MP3, AIFF, FLAC)
+  - [x] Test invalid MIME type rejection
+  - [x] Test file size limit enforcement (reject >200MB)
+  - [x] Test streaming to local filesystem
+  - [x] Test error messages (no stack traces)
 
 **Success Metric:** File upload endpoint works, 200MB limit enforced, local storage functional.
 
@@ -62,22 +62,22 @@
 
 **Objective:** Generate clean ZIP artifacts with consistent naming. Implement 7-14 day retention + automatic cleanup cron.
 
-- [ ] Create `server/lib/artifact-packaging.ts`
-  - [ ] Generate ZIP with structure: `Artist - Track/stems/`, `lyrics.txt`, `project.aup3`
-  - [ ] Sanitize artist/track names (remove special chars, spaces → underscores)
-  - [ ] Implement idempotent ZIP generation (safe to retry)
-  - [ ] Store ZIP locally (STORAGE_ROOT/artifacts/)
-  - [ ] Return ZIP file path and local URL
+- [x] Create `server/lib/artifact-packaging.ts`
+  - [x] Generate ZIP with structure: `Artist - Track/stems/`, `lyrics.txt`, `project.aup3`
+  - [x] Sanitize artist/track names (remove special chars, spaces → underscores)
+  - [x] Implement idempotent ZIP generation (safe to retry)
+  - [x] Store ZIP locally (STORAGE_ROOT/artifacts/)
+  - [x] Return ZIP file path and local URL
 
 - [ ] Add `jobs.downloadArtifacts` endpoint
   - [ ] Input: `z.object({ jobId })`
   - [ ] Return: `{ zipPath, zipUrl, expiresAt }`
   - [ ] Verify job is DONE before allowing download
 
-- [ ] Update Audacity worker
-  - [ ] After `.aup3` generation, call `packageArtifacts(jobId)` to create ZIP
-  - [ ] Store ZIP path in job metadata
-  - [ ] Log ZIP generation success/failure
+- [x] Update Audacity worker
+  - [x] After `.aup3` generation, call `packageArtifacts(jobId)` to create ZIP
+  - [x] Store ZIP path in job metadata
+  - [x] Log ZIP generation success/failure
 
 - [ ] Create `server/lib/artifact-cleanup.ts`
   - [ ] Scan STORAGE_ROOT/artifacts/ for files older than 14 days
@@ -103,7 +103,9 @@
 
 **Objective:** Clear user-facing error messages, no internal stack traces, consistent retry buttons.
 
-- [ ] Create `server/lib/error-messages.ts`
+**Status: COMPLETE**
+
+- [x] Create `server/lib/error-messages.ts`
   - [ ] Define user-facing messages for all failure modes:
     - `CAPTCHA_REQUIRED` → "YouTube blocked this request. Please try again later."
     - `RATE_LIMITED` → "Too many requests. Please wait before retrying."

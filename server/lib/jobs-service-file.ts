@@ -6,6 +6,8 @@
  */
 
 import path from "path";
+import { v4 as uuidv4 } from "uuid";
+import fs from "fs-extra";
 import { filesystem } from "./filesystem";
 import { FileMetadata, streamUploadToLocal, deleteUploadedFile } from "./file-upload";
 import type { JobResponse } from "./jobs-service";
@@ -75,8 +77,6 @@ export async function createJobFolderFromFile(
 ): Promise<{ jobId: string; metadata: any }> {
   // For now, create job with file metadata instead of URL
   // This will be integrated into filesystem.createJobFolder in Phase 8.2
-  const { v4: uuidv4 } = require("uuid");
-  const fs = require("fs-extra");
 
   const jobId = uuidv4();
   const now = new Date().toISOString();
