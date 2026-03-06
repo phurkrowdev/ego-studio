@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { trpc } from "../lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -219,6 +219,18 @@ export function JobDetail() {
               </p>
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Error Message (if job failed) */}
+      {job.state === "FAILED" && job.failureReason && (
+        <Card className="p-6 mb-6 border-red-200 bg-red-50">
+          <h2 className="text-lg font-bold mb-4 text-red-800">⚠️ Processing Failed</h2>
+          <div className="space-y-3">
+            <p className="text-red-700 font-semibold">
+              {job.failureReason}
+            </p>
+          </div>
         </Card>
       )}
 

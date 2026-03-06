@@ -43,7 +43,14 @@ export function FileUploadForm() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Upload failed");
+        let errorMessage = data.error || "Upload failed";
+        
+        // Handle 429 Too Many Requests (concurrency limit)
+        if (res.status === 429) {
+          errorMessage = `${errorMessage} Wait ${res.headers.get("Retry-After") || "60"} seconds before trying again.`;
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const data = await res.json();

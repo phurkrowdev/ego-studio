@@ -32,6 +32,7 @@ const moves = createMoveOperations(filesystem, STORAGE_ROOT);
 export interface JobResponse {
   jobId: string;
   state: "NEW" | "CLAIMED" | "RUNNING" | "DONE" | "FAILED";
+  failureReason?: string;
   metadata: {
     jobId: string;
     youtubeUrl: string;
@@ -312,6 +313,7 @@ function jobToResponse(jobId: string, metadata: any): JobResponse {
   return {
     jobId,
     state: metadata.state,
+    failureReason: metadata.download?.reason,
     metadata: {
       jobId: metadata.id || jobId,
       youtubeUrl: metadata.youtubeUrl,

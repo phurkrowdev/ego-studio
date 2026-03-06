@@ -17,6 +17,7 @@ import Busboy from "busboy";
 import path from "path";
 import { createJobFromFile } from "../lib/jobs-service-file";
 import { UPLOAD_CONSTRAINTS, SUPPORTED_FORMATS } from "../lib/file-upload";
+import { checkConcurrencyLimit } from "../lib/concurrency-limiter";
 
 /**
  * Register upload endpoint
@@ -143,6 +144,16 @@ async function handleFileUpload(req: Request, res: Response): Promise<void> {
       res.status(415).json({
         error: `Unsupported file format. Supported formats: WAV, MP3, AIFF, FLAC.`,
       });
+      return;
+    }
+
+    // Check concurrency limit (default 2 concurrent jobs per user)
+    const concurrencyStatus = await checkConcurrencyLimit("anonymous", 2);
+    if (!concurrencyStatus.allowed) {
+      res.status(429).json({
+        error: concurrencyStatus.message || "Too many concurrent jobs. Please wait for one to complete.",
+      });
+      res.setHeader("Retry-After", "60");
       return;
     }
 

@@ -26,13 +26,26 @@ export async function checkConcurrencyLimit(
   limit: number = 2
 ): Promise<ConcurrencyStatus> {
   try {
-    // Count CLAIMED and RUNNING jobs for this user
+    // Count CLAIMED and RUNNING jobs
+    // In a real implementation, would filter by userId
+    // For now, count all active jobs
     const claimedJobs = await listJobs({ state: "CLAIMED", limit: 100 });
     const runningJobs = await listJobs({ state: "RUNNING", limit: 100 });
 
-    // In a real implementation, would filter by userId
-    // For now, count all jobs as a simple approximation
-    const totalRunning = claimedJobs.length + runningJobs.length;
+    // Count only recently active jobs (last 10 minutes)
+    const now = Date.now();
+    const tenMinutesAgo = now - 10 * 60 * 1000;
+
+    const activeJobs = [
+      ...claimedJobs.filter(
+        (j: any) => new Date(j.updatedAt).getTime() > tenMinutesAgo
+      ),
+      ...runningJobs.filter(
+        (j: any) => new Date(j.updatedAt).getTime() > tenMinutesAgo
+      ),
+    ];
+
+    const totalRunning = activeJobs.length;
 
     if (totalRunning >= limit) {
       return {

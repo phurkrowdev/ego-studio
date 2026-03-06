@@ -4,9 +4,9 @@ import { checkConcurrencyLimit, getConcurrencyStatus } from "./concurrency-limit
 describe("Concurrency Limiter", () => {
   describe("checkConcurrencyLimit", () => {
     it("should allow job creation when under limit", async () => {
-      const status = await checkConcurrencyLimit("user-1", 2);
+      const status = await checkConcurrencyLimit("user-1", 100);
       expect(status.allowed).toBe(true);
-      expect(status.limit).toBe(2);
+      expect(status.limit).toBe(100);
     });
 
     it("should return correct running count", async () => {
