@@ -134,4 +134,14 @@ export const jobsRouter = router({
       const result = await retryJob(input.jobId, input.reason);
       return result;
     }),
+
+  /**
+   * Download artifacts for a completed job
+   */
+  downloadArtifacts: publicProcedure
+    .input(z.object({ jobId: z.string() }))
+    .query(async ({ input }) => {
+      const result = await JobsService.getJobArtifacts(input.jobId);
+      return result;
+    }),
 });
