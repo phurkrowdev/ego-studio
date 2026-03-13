@@ -1,0 +1,49 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Node modules and dependencies
+node_modules
+npm-debug.log
+pnpm-debug.log
+yarn-error.log
+
+# Build artifacts
+dist
+build
+.next
+out
+
+# Development files
+.env.local
+.env.*.local
+.DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+CHANGELOG.md
+docs
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+.vitest
+coverage
+
+# Storage (local development)
+storage
+/tmp
+
+# Logs
+logs
+*.log
+
+# Temporary files
+.tmp
+temp

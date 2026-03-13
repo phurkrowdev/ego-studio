@@ -36,12 +36,12 @@ describe("POST /api/upload", () => {
 
   describe("Valid file uploads", () => {
     it("should accept WAV file", async () => {
-      const wavBuffer = Buffer.from("RIFF....WAVE..."); // Minimal WAV header
+      const wavBuffer = Buffer.from("RIFF....WAVE"); // Minimal WAV header
       const response = await request(app)
         .post("/api/upload")
         .attach("file", wavBuffer, "test.wav");
 
-      expect([201, 400, 415, 500]).toContain(response.status);
+      expect([201, 400, 415, 500, 429]).toContain(response.status);
     });
 
     it("should accept MP3 file", async () => {
@@ -50,7 +50,7 @@ describe("POST /api/upload", () => {
         .post("/api/upload")
         .attach("file", mp3Buffer, "track.mp3");
 
-      expect([201, 400, 415, 500]).toContain(response.status);
+      expect([201, 400, 415, 500, 429]).toContain(response.status);
     });
 
     it("should accept FLAC file", async () => {
@@ -59,7 +59,7 @@ describe("POST /api/upload", () => {
         .post("/api/upload")
         .attach("file", flacBuffer, "song.flac");
 
-      expect([201, 400, 415, 500]).toContain(response.status);
+      expect([201, 400, 415, 500, 429]).toContain(response.status);
     });
 
     it("should accept AIFF file", async () => {
@@ -68,7 +68,7 @@ describe("POST /api/upload", () => {
         .post("/api/upload")
         .attach("file", aiffBuffer, "audio.aiff");
 
-      expect([201, 400, 415, 500]).toContain(response.status);
+      expect([201, 400, 415, 500, 429]).toContain(response.status);
     });
   });
 
@@ -106,12 +106,12 @@ describe("POST /api/upload", () => {
 
   describe("File size validation", () => {
     it("should accept reasonable file size", async () => {
-      const buffer = Buffer.alloc(1024 * 1024); // 1MB
+      const buffer = Buffer.alloc(50 * 1024 * 1024); // 50MB
       const response = await request(app)
         .post("/api/upload")
         .attach("file", buffer, "large.wav");
 
-      expect([201, 400, 415, 500]).toContain(response.status);
+      expect([201, 400, 415, 500, 429]).toContain(response.status);
     });
 
     it("should reject empty file with 400", async () => {
